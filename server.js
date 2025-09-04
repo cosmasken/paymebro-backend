@@ -434,6 +434,42 @@ app.post('/api/solana-pay/checkout', async (req, res) => {
   }
 });
 
+// Checkout data endpoint for static page
+app.get('/api/checkout-data/:reference', async (req, res) => {
+  try {
+    const { reference } = req.params;
+    
+    const { data: session, error } = await supabase
+      .from('checkout_sessions')
+      .select('*')
+      .eq('reference', reference)
+      .single();
+
+    if (error || !session) {
+      return res.json({ success: false, error: 'Session not found' });
+    }
+
+    const transactionUrl = `solana:${process.env.BACKEND_URL}/api/solana-pay/checkout?reference=${reference}`;
+    const qrCode = await QRCode.toDataURL(transactionUrl);
+
+    res.json({
+      success: true,
+      session,
+      qrCode,
+      transactionUrl
+    });
+
+  } catch (error) {
+    console.error('Checkout data error:', error);
+    res.json({ success: false, error: 'Failed to load checkout data' });
+  }
+});
+
+// Serve checkout page
+app.get('/checkout/:reference', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'checkout.html'));
+});
+
 // EXISTING ENDPOINTS
 
 // Solana Pay transaction request
