@@ -145,7 +145,7 @@ app.post('/api/payments', async (req, res) => {
       success: true,
       payment,
       reference,
-      paymentUrl: `solana:${process.env.BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`,
+      paymentUrl: `solana:${PLATFORM_WALLET}?amount=${totalAmount.toNumber()}&reference=${reference}&label=PayMeBro&message=${encodeURIComponent(description || 'Payment')}`,
       feeBreakdown: {
         merchantReceives: baseAmount.toNumber(),
         platformFee: feeAmount.toNumber(),
@@ -516,7 +516,7 @@ app.get('/api/invoice-data/:id', async (req, res) => {
       return res.json({ success: false, error: 'Invoice not found' });
     }
 
-    const solanaPayUrl = `solana:${BACKEND_URL}/api/solana-pay/transaction?reference=${invoice.reference}`;
+    const solanaPayUrl = `solana:${PLATFORM_WALLET}?amount=${invoice.amount}&reference=${invoice.reference}&label=PayMeBro&message=${encodeURIComponent('Invoice: ' + (invoice.description || 'Payment'))}`;
     const qrCode = await QRCode.toDataURL(solanaPayUrl);
 
     res.json({
@@ -547,7 +547,7 @@ app.get('/api/payment-data/:reference', async (req, res) => {
       return res.json({ success: false, error: 'Payment link not found' });
     }
 
-    const solanaPayUrl = `solana:${BACKEND_URL}/api/solana-pay/multi-transaction?reference=${reference}`;
+    const solanaPayUrl = `solana:${PLATFORM_WALLET}?amount=${paymentUrl.amount}&reference=${reference}&label=PayMeBro&message=${encodeURIComponent(paymentUrl.title || 'Payment')}`;
     const qrCode = await QRCode.toDataURL(solanaPayUrl);
 
     // Get payment stats
@@ -636,7 +636,7 @@ app.post('/api/invoices', async (req, res) => {
 
     if (paymentError) throw paymentError;
 
-    const paymentUrl = `solana:${BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`;
+    const paymentUrl = `solana:${PLATFORM_WALLET}?amount=${totalAmount.toNumber()}&reference=${reference}&label=PayMeBro&message=${encodeURIComponent('Invoice: ' + (description || 'Payment'))}`;
 
     // Send invoice email if customer email provided
     if (customerEmail) {
@@ -686,7 +686,7 @@ app.post('/api/payment-urls', async (req, res) => {
     }
 
     const reference = Keypair.generate().publicKey.toString();
-    const paymentUrl = `solana:${process.env.BACKEND_URL}/api/solana-pay/multi-transaction?reference=${reference}`;
+    const paymentUrl = `solana:${PLATFORM_WALLET}?amount=${amount}&reference=${reference}&label=PayMeBro&message=${encodeURIComponent(title || 'Payment')}`;
 
     const urlData = {
       user_id: merchantId,
@@ -915,7 +915,7 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
 app.get('/api/qr/:reference', async (req, res) => {
   try {
     const { reference } = req.params;
-    const paymentUrl = `solana:${process.env.BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`;
+    const paymentUrl = `solana:${PLATFORM_WALLET}?amount=0.001&reference=${reference}&label=PayMeBro&message=${encodeURIComponent('QR Payment')}`;
 
     const qrCode = await QRCode.toDataURL(paymentUrl);
 
