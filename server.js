@@ -311,7 +311,7 @@ app.post('/api/checkout/create', async (req, res) => {
       recipient_wallet: process.env.AFRIPAY_PLATFORM_WALLET,
       status: 'pending',
       created_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30 min expiry
+      expires_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() // 2 hours expiry
     };
 
     const { data: session, error } = await supabase
@@ -327,7 +327,7 @@ app.post('/api/checkout/create', async (req, res) => {
       success: true,
       reference,
       checkoutUrl: `${process.env.BACKEND_URL}/checkout/${reference}`,
-      transactionUrl: `solana:${process.env.BACKEND_URL}/api/solana-pay/checkout?reference=${reference}`
+      transactionUrl: `solana:${process.env.BACKEND_URL}/api/solana-pay/checkout?reference=${reference}&recipient=${process.env.AFRIPAY_PLATFORM_WALLET}&amount=${amount}&currency=${currency}`
     });
 
   } catch (error) {
@@ -419,11 +419,8 @@ app.post('/api/solana-pay/checkout', async (req, res) => {
 
     const base64 = serialized.toString('base64');
 
-    // Mark session as processing
-    await supabase
-      .from('checkout_sessions')
-      .update({ status: 'processing', updated_at: new Date().toISOString() })
-      .eq('reference', reference);
+    // Don't change status to processing yet - only when transaction is actually submitted
+    console.log(`✅ Transaction created for session ${reference}, amount: ${amount.toString()} ${session.currency}`);
 
     res.json({ 
       transaction: base64, 
