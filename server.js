@@ -79,7 +79,7 @@ class PriceService {
 const priceService = new PriceService();
 
 // Utility functions
-const createMemoInstruction = (memo, signers) => {
+const createMemoInstruction = (memo, signers = []) => {
   return new TransactionInstruction({
     keys: signers.map(signer => ({
       pubkey: signer,
