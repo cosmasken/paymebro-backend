@@ -851,7 +851,7 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
     // Create transfer using Solana Pay (following official example)
     let transaction = await createTransfer(connection, buyerPublicKey, {
       recipient: recipientPublicKey,
-      amount: totalAmount,
+      amount: new BigNumber(totalAmount.toNumber()),
       splToken: paymentUrl.currency === 'SOL' ? undefined : USDC_MINT,
       reference: referencePublicKey,
       memo: `PayMeBro: ${paymentUrl.title} - ${paymentReference}`,
