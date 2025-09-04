@@ -62,6 +62,8 @@
 
         function displayPayment(data) {
             const { paymentUrl, qrCode, solanaPayUrl, stats } = data;
+            const transactionUrl = `${window.location.origin}/api/solana-pay/multi-transaction?reference=${reference}`;
+            const solanaTransactionUrl = `solana:${transactionUrl}`;
             
             document.getElementById('content').innerHTML = `
                 <div class="title">${paymentUrl.title}</div>
@@ -90,9 +92,26 @@
                     <img class="qr-code" src="${qrCode}" alt="Solana Pay QR Code">
                     <p>Scan with any Solana wallet</p>
                     
-                    <a href="${solanaPayUrl}" class="pay-button">
-                        🚀 Pay ${paymentUrl.amount} ${paymentUrl.currency}
-                    </a>
+                    <div style="margin: 1.5rem 0;">
+                        <a href="${solanaTransactionUrl}" class="pay-button">
+                            🚀 Open Wallet
+                        </a>
+                        <br>
+                        <a href="https://phantom.app/ul/browse/${encodeURIComponent(transactionUrl)}" class="pay-button" style="background: #AB9FF2; margin: 0.5rem;">
+                            👻 Phantom
+                        </a>
+                        <a href="https://solflare.com/ul/browse/${encodeURIComponent(transactionUrl)}" class="pay-button" style="background: #FFA500; margin: 0.5rem;">
+                            🔥 Solflare
+                        </a>
+                    </div>
+                    
+                    <div style="background: #e3f2fd; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                        <p style="font-size: 0.9rem; color: #1976d2; margin: 0;">
+                            <strong>Transaction Request:</strong><br>
+                            <span style="font-family: monospace; word-break: break-all;">${solanaTransactionUrl}</span>
+                            <button onclick="copyToClipboard('${solanaTransactionUrl}')" style="background: #1976d2; color: white; border: none; padding: 4px 8px; border-radius: 4px; margin-left: 8px; cursor: pointer;">Copy</button>
+                        </p>
+                    </div>
                     
                     <p style="margin-top: 1rem; font-size: 0.9rem; color: #666;">
                         Works with Phantom, Solflare, Backpack & more
@@ -108,6 +127,14 @@
                     <p>Please check the payment link and try again.</p>
                 </div>
             `;
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
+            }).catch(() => {
+                alert('Failed to copy. Please copy manually.');
+            });
         }
 
         loadPayment();
