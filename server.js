@@ -846,28 +846,32 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
       .single();
 
     const recipientPublicKey = new PublicKey(process.env.AFRIPAY_PLATFORM_WALLET);
-    
-    // Use the original reference (which is a valid PublicKey) for the transfer
     const referencePublicKey = new PublicKey(reference);
 
-    // Create transfer using Solana Pay
-    const transferConfig = {
+    // Create transfer using Solana Pay (following official example)
+    let transaction = await createTransfer(connection, buyerPublicKey, {
       recipient: recipientPublicKey,
       amount: totalAmount,
       splToken: paymentUrl.currency === 'SOL' ? undefined : USDC_MINT,
       reference: referencePublicKey,
       memo: `PayMeBro: ${paymentUrl.title} - ${paymentReference}`,
-    };
-
-    const transaction = await createTransfer(connection, buyerPublicKey, transferConfig);
-
-    // Serialize transaction
-    const multiTxSerialized = transaction.serialize({
-      requireAllSignatures: false,
-      verifySignatures: false,
     });
 
-    const base64Transaction = multiTxSerialized.toString('base64');
+    // Serialize and deserialize for consistent ordering (from official example)
+    transaction = Transaction.from(
+      transaction.serialize({
+        verifySignatures: false,
+        requireAllSignatures: false,
+      })
+    );
+
+    // Serialize and return the unsigned transaction
+    const serialized = transaction.serialize({
+      verifySignatures: false,
+      requireAllSignatures: false,
+    });
+
+    const base64Transaction = serialized.toString('base64');
 
     res.json({
       transaction: base64Transaction,
