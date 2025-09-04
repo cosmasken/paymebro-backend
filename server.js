@@ -145,7 +145,7 @@ app.post('/api/payments', async (req, res) => {
       success: true,
       payment,
       reference,
-      paymentUrl: `solana:${PLATFORM_WALLET}?amount=${totalAmount.toNumber()}&reference=${reference}&label=PayMeBro&message=${encodeURIComponent(description || 'Payment')}`,
+      paymentUrl: `solana:${process.env.BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`,
       feeBreakdown: {
         merchantReceives: baseAmount.toNumber(),
         platformFee: feeAmount.toNumber(),
@@ -398,6 +398,40 @@ app.post('/api/solana-pay/transaction', async (req, res) => {
       message: payment.description || `Pay ${payment.amount} ${payment.currency}`,
     });
 
+    // Update payment status and send notification
+    await supabase
+      .from('payments')
+      .update({ status: 'processing' })
+      .eq('reference', reference);
+
+    // Get merchant details for notification
+    const { data: merchant } = await supabase
+      .from('users')
+      .select('email, name')
+      .eq('id', payment.user_id)
+      .single();
+
+    if (merchant?.email) {
+      try {
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'PayMeBro <payments@payments.paymebro.xyz>',
+          to: merchant.email,
+          subject: `💰 Payment Processing - ${payment.amount} ${payment.currency}`,
+          html: `
+            <h2>🔄 Payment Being Processed!</h2>
+            <p><strong>Amount:</strong> ${payment.amount} ${payment.currency}</p>
+            <p><strong>Description:</strong> ${payment.description || 'Payment'}</p>
+            <p><strong>Reference:</strong> ${reference}</p>
+            <br>
+            <p>The payment transaction has been created and is being processed.</p>
+          `
+        });
+        console.log(`✅ Payment processing notification sent to ${merchant.email}`);
+      } catch (emailError) {
+        console.error('❌ Failed to send notification email:', emailError);
+      }
+    }
+
   } catch (error) {
     console.error('POST transaction error:', error);
     res.status(500).json({ error: 'Failed to create transaction' });
@@ -516,7 +550,7 @@ app.get('/api/invoice-data/:id', async (req, res) => {
       return res.json({ success: false, error: 'Invoice not found' });
     }
 
-    const solanaPayUrl = `solana:${PLATFORM_WALLET}?amount=${invoice.amount}&reference=${invoice.reference}&label=PayMeBro&message=${encodeURIComponent('Invoice: ' + (invoice.description || 'Payment'))}`;
+    const solanaPayUrl = `solana:${BACKEND_URL}/api/solana-pay/transaction?reference=${invoice.reference}`;
     const qrCode = await QRCode.toDataURL(solanaPayUrl);
 
     res.json({
@@ -547,7 +581,7 @@ app.get('/api/payment-data/:reference', async (req, res) => {
       return res.json({ success: false, error: 'Payment link not found' });
     }
 
-    const solanaPayUrl = `solana:${PLATFORM_WALLET}?amount=${paymentUrl.amount}&reference=${reference}&label=PayMeBro&message=${encodeURIComponent(paymentUrl.title || 'Payment')}`;
+    const solanaPayUrl = `solana:${BACKEND_URL}/api/solana-pay/multi-transaction?reference=${reference}`;
     const qrCode = await QRCode.toDataURL(solanaPayUrl);
 
     // Get payment stats
@@ -636,7 +670,7 @@ app.post('/api/invoices', async (req, res) => {
 
     if (paymentError) throw paymentError;
 
-    const paymentUrl = `solana:${PLATFORM_WALLET}?amount=${totalAmount.toNumber()}&reference=${reference}&label=PayMeBro&message=${encodeURIComponent('Invoice: ' + (description || 'Payment'))}`;
+    const paymentUrl = `solana:${BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`;
 
     // Send invoice email if customer email provided
     if (customerEmail) {
@@ -686,7 +720,7 @@ app.post('/api/payment-urls', async (req, res) => {
     }
 
     const reference = Keypair.generate().publicKey.toString();
-    const paymentUrl = `solana:${PLATFORM_WALLET}?amount=${amount}&reference=${reference}&label=PayMeBro&message=${encodeURIComponent(title || 'Payment')}`;
+    const paymentUrl = `solana:${process.env.BACKEND_URL}/api/solana-pay/multi-transaction?reference=${reference}`;
 
     const urlData = {
       user_id: merchantId,
@@ -915,7 +949,7 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
 app.get('/api/qr/:reference', async (req, res) => {
   try {
     const { reference } = req.params;
-    const paymentUrl = `solana:${PLATFORM_WALLET}?amount=0.001&reference=${reference}&label=PayMeBro&message=${encodeURIComponent('QR Payment')}`;
+    const paymentUrl = `solana:${process.env.BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`;
 
     const qrCode = await QRCode.toDataURL(paymentUrl);
 
