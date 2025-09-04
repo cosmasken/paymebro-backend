@@ -309,8 +309,8 @@ app.get('/api/solana-pay/transaction', async (req, res) => {
     }
 
     res.json({
-      label: payment.merchant_name || 'MVP Payment',
-      icon: 'https://paymebro.xyz/icon.png',
+      label: `PayMeBro - ${payment.description || 'Payment'}`,
+      icon: 'https://raw.githubusercontent.com/solana-labs/solana-pay/master/core/example/point-of-sale/public/icon.svg',
     });
 
   } catch (error) {
@@ -780,8 +780,8 @@ app.get('/api/solana-pay/multi-transaction', async (req, res) => {
     }
 
     res.json({
-      label: paymentUrl.title,
-      icon: 'https://paymebro.xyz/icon.png',
+      label: `PayMeBro - ${paymentUrl.title}`,
+      icon: 'https://raw.githubusercontent.com/solana-labs/solana-pay/master/core/example/point-of-sale/public/icon.svg',
     });
 
   } catch (error) {
@@ -846,7 +846,31 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
       .single();
 
     const recipientPublicKey = new PublicKey(process.env.AFRIPAY_PLATFORM_WALLET);
-    const transaction = new Transaction();
+    const referencePublicKey = new PublicKey(paymentReference);
+
+    // Create transfer using Solana Pay
+    const transferConfig = {
+      recipient: recipientPublicKey,
+      amount: totalAmount,
+      splToken: paymentUrl.currency === 'SOL' ? undefined : USDC_MINT,
+      reference: referencePublicKey,
+      memo: `PayMeBro: ${paymentUrl.title}`,
+    };
+
+    const transaction = await createTransfer(connection, buyerPublicKey, transferConfig);
+
+    // Serialize transaction
+    const serializedTransaction = transaction.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    });
+
+    const base64Transaction = serializedTransaction.toString('base64');
+
+    res.json({
+      transaction: base64Transaction,
+      message: `Payment of ${totalAmount.toNumber()} ${paymentUrl.currency} - ${paymentUrl.title}`,
+    });
 
     const bigAmount = BigNumber(totalAmount);
 
