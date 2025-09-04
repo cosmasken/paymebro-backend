@@ -91,13 +91,13 @@ const createMemoInstruction = (memo, signers) => {
   });
 };
 
-const addReferenceToInstruction = (instruction, reference) => {
-  instruction.keys.push({
-    pubkey: new PublicKey(reference),
-    isSigner: false,
-    isWritable: false,
-  });
-};
+// Remove the broken addReferenceToInstruction function
+// const addReferenceToInstruction = (instruction, reference) => {
+//   // Use memo instruction instead of trying to convert reference to PublicKey
+//   // References are UUIDs which are not valid base58 PublicKeys
+//   const memoInstruction = createMemoInstruction(reference);
+//   return memoInstruction;
+// };
 
 // PAYMENT PROCESSING ENDPOINTS
 
@@ -309,7 +309,7 @@ app.get('/api/solana-pay/transaction', async (req, res) => {
 
     res.json({
       label: payment.merchant_name || 'MVP Payment',
-      icon: 'https://mvp-server.com/icon.png',
+      icon: 'https://paymebro.xyz/icon.png',
     });
 
   } catch (error) {
@@ -365,8 +365,8 @@ app.post('/api/solana-pay/transaction', async (req, res) => {
         usdcMint.decimals
       );
 
-      addReferenceToInstruction(transferInstruction, reference);
-      transaction.add(transferInstruction);
+      const memoInstruction = createMemoInstruction(reference);
+      transaction.add(transferInstruction, memoInstruction);
 
     } else {
       const SOL_PRICE_USD = await priceService.getSOLPrice();
@@ -379,8 +379,8 @@ app.post('/api/solana-pay/transaction', async (req, res) => {
         lamports: Math.floor(lamports),
       });
 
-      addReferenceToInstruction(transferInstruction, reference);
-      transaction.add(transferInstruction);
+      const memoInstruction = createMemoInstruction(reference);
+      transaction.add(transferInstruction, memoInstruction);
     }
 
     const { blockhash } = await connection.getLatestBlockhash('finalized');
@@ -504,7 +504,7 @@ app.get('/pay/:reference', (req, res) => {
 app.get('/api/invoice-data/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const { data: invoice, error } = await supabase
       .from('invoices')
       .select('*')
@@ -535,7 +535,7 @@ app.get('/api/invoice-data/:id', async (req, res) => {
 app.get('/api/payment-data/:reference', async (req, res) => {
   try {
     const { reference } = req.params;
-    
+
     const { data: paymentUrl, error } = await supabase
       .from('payment_links')
       .select('*')
@@ -746,7 +746,7 @@ app.get('/api/solana-pay/multi-transaction', async (req, res) => {
 
     res.json({
       label: paymentUrl.title,
-      icon: 'https://mvp-server.com/icon.png',
+      icon: 'https://paymebro.xyz/icon.png',
     });
 
   } catch (error) {
@@ -830,8 +830,8 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
         usdcMint.decimals
       );
 
-      addReferenceToInstruction(transferInstruction, paymentReference);
-      transaction.add(transferInstruction);
+      const memoInstruction = createMemoInstruction(paymentReference);
+      transaction.add(transferInstruction, memoInstruction);
 
     } else {
       const SOL_PRICE_USD = await priceService.getSOLPrice();
@@ -844,8 +844,8 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
         lamports: Math.floor(lamports),
       });
 
-      addReferenceToInstruction(transferInstruction, paymentReference);
-      transaction.add(transferInstruction);
+      const memoInstruction = createMemoInstruction(paymentReference);
+      transaction.add(transferInstruction, memoInstruction);
     }
 
     const { blockhash } = await connection.getLatestBlockhash('finalized');
