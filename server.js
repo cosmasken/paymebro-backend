@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL, TransactionInstruction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL, TransactionInstruction, Keypair } from '@solana/web3.js';
 import { createTransferCheckedInstruction, getAssociatedTokenAddress, getMint } from '@solana/spl-token';
 import { createTransfer } from '@solana/pay';
 import { createClient } from '@supabase/supabase-js';
@@ -111,7 +111,7 @@ app.post('/api/payments', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const reference = randomUUID();
+    const reference = Keypair.generate().publicKey.toString();
     const baseAmount = BigNumber(amount);
     const feeRate = BigNumber(FEE_RATE);
     const fixedFee = BigNumber(FIXED_FEE);
@@ -585,7 +585,7 @@ app.post('/api/invoices', async (req, res) => {
     }
 
     const invoiceId = randomUUID();
-    const reference = randomUUID();
+    const reference = Keypair.generate().publicKey.toString();
     const baseAmount = BigNumber(amount);
     const feeRate = BigNumber(FEE_RATE);
     const fixedFee = BigNumber(FIXED_FEE);
@@ -685,7 +685,7 @@ app.post('/api/payment-urls', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const reference = randomUUID();
+    const reference = Keypair.generate().publicKey.toString();
     const paymentUrl = `solana:${process.env.BACKEND_URL}/api/solana-pay/multi-transaction?reference=${reference}`;
 
     const urlData = {
