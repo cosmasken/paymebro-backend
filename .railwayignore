@@ -1,0 +1,13 @@
+node_modules
+.git
+*.log
+.env.local
+.env.development
+test_payment_qr.png
+save_qr.js
+src/
+database.sql
+reset_database.sql
+add_columns.sql
+DOCS.md
+TEST_RESULTS.md
