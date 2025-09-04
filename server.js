@@ -8,8 +8,12 @@ import QRCode from 'qrcode';
 import axios from 'axios';
 import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
+import { Resend } from 'resend';
 
 dotenv.config();
+
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Environment variable validation with defaults
 const RPC_ENDPOINT = process.env.RPC_ENDPOINT || 'https://api.devnet.solana.com';
@@ -544,12 +548,27 @@ app.post('/api/invoices', async (req, res) => {
 
     // Send invoice email if customer email provided
     if (customerEmail) {
-      console.log(`📧 Invoice Email Sent:
-        To: ${customerEmail}
-        Amount: ${amount} ${currency}
-        Invoice ID: ${invoiceId}
-        Payment URL: ${paymentUrl}
-      `);
+      try {
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'PayMeBro <payments@payments.paymebro.xyz>',
+          to: customerEmail,
+          subject: `Invoice - ${amount} ${currency}`,
+          html: `
+            <h2>Invoice from PayMeBro</h2>
+            <p><strong>Amount:</strong> ${amount} ${currency}</p>
+            <p><strong>Description:</strong> ${description || 'Payment'}</p>
+            <p><strong>Invoice ID:</strong> ${invoiceId}</p>
+            <br>
+            <p>To pay this invoice, use your Solana wallet with this payment URL:</p>
+            <p><code>${paymentUrl}</code></p>
+            <br>
+            <p>Or visit: <a href="${FRONTEND_URL}/invoice/${invoiceId}">View Invoice</a></p>
+          `
+        });
+        console.log(`✅ Invoice email sent to ${customerEmail}`);
+      } catch (emailError) {
+        console.error('❌ Email send failed:', emailError);
+      }
     }
 
     res.json({

@@ -15,6 +15,7 @@
     "axios": "^1.6.0",
     "qrcode": "^1.5.3",
     "bignumber.js": "^9.1.2",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "resend": "^2.0.0"
   }
 }
