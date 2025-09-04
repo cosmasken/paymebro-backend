@@ -654,7 +654,7 @@ app.post('/api/invoices', async (req, res) => {
             <p>To pay this invoice, use your Solana wallet with this payment URL:</p>
             <p><code>${paymentUrl}</code></p>
             <br>
-            <p>Or visit: <a href="${FRONTEND_URL}/invoice/${invoiceId}">View Invoice</a></p>
+            <p>Or visit: <a href="${BACKEND_URL}/invoice/${invoiceId}">View Invoice</a></p>
           `
         });
         console.log(`✅ Invoice email sent to ${customerEmail}`);
@@ -667,7 +667,7 @@ app.post('/api/invoices', async (req, res) => {
       success: true,
       invoice,
       paymentUrl,
-      invoiceUrl: `${FRONTEND_URL}/invoice/${invoiceId}`
+      invoiceUrl: `${BACKEND_URL}/invoice/${invoiceId}`
     });
 
   } catch (error) {
@@ -712,7 +712,7 @@ app.post('/api/payment-urls', async (req, res) => {
     res.json({
       success: true,
       paymentUrl: paymentUrlRecord,
-      shareUrl: `${process.env.FRONTEND_URL}/pay/${reference}`,
+      shareUrl: `${BACKEND_URL}/pay/${reference}`,
       solanaPay: paymentUrl
     });
 
