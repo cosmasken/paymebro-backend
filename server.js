@@ -493,7 +493,7 @@ app.post('/api/invoices', async (req, res) => {
 
     const invoiceData = {
       id: invoiceId,
-      merchant_id: merchantId,
+      user_id: merchantId,
       reference,
       amount: parseFloat(amount),
       currency,
