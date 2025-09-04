@@ -42,6 +42,7 @@ const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfc
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.static('public'));
 
 // Price service
 class PriceService {
@@ -481,7 +482,91 @@ app.get('/api/cctp/transfer/:id', async (req, res) => {
   }
 });
 
-// BUSINESS & MERCHANT FEATURES
+// STATIC PAGES
+
+// Invoice page
+app.get('/invoice/:id', (req, res) => {
+  res.sendFile(__dirname + '/public/invoice.html');
+});
+
+// Payment page  
+app.get('/pay/:reference', (req, res) => {
+  res.sendFile(__dirname + '/public/payment.html');
+});
+
+// Invoice data API
+app.get('/api/invoice-data/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { data: invoice, error } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error || !invoice) {
+      return res.json({ success: false, error: 'Invoice not found' });
+    }
+
+    const solanaPayUrl = `solana:${BACKEND_URL}/api/solana-pay/transaction?reference=${invoice.reference}`;
+    const qrCode = await QRCode.toDataURL(solanaPayUrl);
+
+    res.json({
+      success: true,
+      invoice,
+      qrCode,
+      solanaPayUrl
+    });
+
+  } catch (error) {
+    console.error('Invoice data error:', error);
+    res.json({ success: false, error: 'Failed to load invoice' });
+  }
+});
+
+// Payment data API
+app.get('/api/payment-data/:reference', async (req, res) => {
+  try {
+    const { reference } = req.params;
+    
+    const { data: paymentUrl, error } = await supabase
+      .from('payment_links')
+      .select('*')
+      .eq('reference', reference)
+      .single();
+
+    if (error || !paymentUrl) {
+      return res.json({ success: false, error: 'Payment link not found' });
+    }
+
+    const solanaPayUrl = `solana:${BACKEND_URL}/api/solana-pay/multi-transaction?reference=${reference}`;
+    const qrCode = await QRCode.toDataURL(solanaPayUrl);
+
+    // Get payment stats
+    const { data: payments } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('parent_reference', reference);
+
+    const stats = {
+      totalPayments: payments?.length || 0,
+      totalCollected: payments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0
+    };
+
+    res.json({
+      success: true,
+      paymentUrl,
+      qrCode,
+      solanaPayUrl,
+      stats
+    });
+
+  } catch (error) {
+    console.error('Payment data error:', error);
+    res.json({ success: false, error: 'Failed to load payment' });
+  }
+});
 
 // Create invoice
 app.post('/api/invoices', async (req, res) => {

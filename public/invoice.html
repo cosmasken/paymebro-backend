@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PayMeBro Invoice</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 2rem auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; text-align: center; }
+        .content { padding: 2rem; }
+        .amount { font-size: 2.5rem; font-weight: bold; color: #333; margin: 1rem 0; }
+        .details { background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 1rem 0; }
+        .detail-row { display: flex; justify-content: space-between; margin: 0.5rem 0; }
+        .qr-section { text-align: center; margin: 2rem 0; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; }
+        .qr-code { max-width: 200px; border-radius: 8px; margin: 1rem 0; }
+        .pay-button { display: inline-block; background: #14F195; color: #000; padding: 1rem 2rem; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 1rem 0; transition: all 0.3s; }
+        .pay-button:hover { background: #00D084; transform: translateY(-2px); }
+        .status { padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: bold; }
+        .status-pending { background: #fff3cd; color: #856404; }
+        .status-paid { background: #d1edff; color: #0c5460; }
+        .footer { text-align: center; padding: 1rem; color: #666; font-size: 0.9rem; }
+        .loading { text-align: center; padding: 2rem; }
+        .error { text-align: center; padding: 2rem; color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💳 PayMeBro Invoice</h1>
+            <div class="status status-pending" id="status">Pending Payment</div>
+        </div>
+        
+        <div class="content" id="content">
+            <div class="loading">Loading invoice...</div>
+        </div>
+
+        <div class="footer">
+            <p>Powered by PayMeBro • Secure Solana Payments</p>
+        </div>
+    </div>
+
+    <script>
+        const invoiceId = window.location.pathname.split('/').pop();
+
+        async function loadInvoice() {
+            try {
+                const response = await fetch(`/api/invoice-data/${invoiceId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayInvoice(data);
+                } else {
+                    showError('Invoice not found');
+                }
+            } catch (error) {
+                showError('Error loading invoice');
+            }
+        }
+
+        function displayInvoice(data) {
+            const { invoice, qrCode, solanaPayUrl } = data;
+            
+            document.getElementById('content').innerHTML = `
+                <div class="amount">${invoice.amount} ${invoice.currency}</div>
+                
+                <div class="details">
+                    <div class="detail-row">
+                        <span>Invoice ID:</span>
+                        <span>${invoice.id}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Description:</span>
+                        <span>${invoice.description || 'Payment'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Customer:</span>
+                        <span>${invoice.customer_email || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Created:</span>
+                        <span>${new Date(invoice.created_at).toLocaleDateString()}</span>
+                    </div>
+                </div>
+
+                <div class="qr-section">
+                    <h3>📱 Scan to Pay with Solana Wallet</h3>
+                    <img class="qr-code" src="${qrCode}" alt="Solana Pay QR Code">
+                    <p>Scan with Phantom, Solflare, or any Solana wallet</p>
+                    
+                    <a href="${solanaPayUrl}" class="pay-button">
+                        🚀 Pay Now with Solana Wallet
+                    </a>
+                    
+                    <p style="margin-top: 1rem; font-size: 0.9rem; color: #666;">
+                        Click "Pay Now" to open your wallet app directly
+                    </p>
+                </div>
+            `;
+            
+            if (invoice.status === 'paid') {
+                document.getElementById('status').textContent = '✅ Paid';
+                document.getElementById('status').className = 'status status-paid';
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('content').innerHTML = `
+                <div class="error">
+                    <h3>❌ ${message}</h3>
+                    <p>Please check the invoice link and try again.</p>
+                </div>
+            `;
+        }
+
+        loadInvoice();
+    </script>
+</body>
+</html>

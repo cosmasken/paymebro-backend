@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PayMeBro Payment</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 2rem auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #14F195 0%, #00D084 100%); color: #000; padding: 2rem; text-align: center; }
+        .content { padding: 2rem; }
+        .amount { font-size: 3rem; font-weight: bold; color: #333; margin: 1rem 0; text-align: center; }
+        .title { font-size: 1.5rem; font-weight: bold; color: #333; margin: 1rem 0; text-align: center; }
+        .description { color: #666; margin: 1rem 0; text-align: center; }
+        .qr-section { text-align: center; margin: 2rem 0; padding: 2rem; background: #f8f9fa; border-radius: 12px; }
+        .qr-code { max-width: 250px; border-radius: 12px; margin: 1rem 0; }
+        .pay-button { display: inline-block; background: #14F195; color: #000; padding: 1.2rem 2.5rem; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 1.1rem; margin: 1.5rem 0; transition: all 0.3s; }
+        .pay-button:hover { background: #00D084; transform: translateY(-2px); }
+        .stats { display: flex; justify-content: space-around; background: #f8f9fa; padding: 1rem; border-radius: 8px; margin: 1rem 0; }
+        .stat { text-align: center; }
+        .stat-number { font-size: 1.5rem; font-weight: bold; color: #333; }
+        .stat-label { font-size: 0.9rem; color: #666; }
+        .footer { text-align: center; padding: 1rem; color: #666; font-size: 0.9rem; }
+        .loading { text-align: center; padding: 2rem; }
+        .error { text-align: center; padding: 2rem; color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💳 PayMeBro</h1>
+            <p>Secure Solana Payments</p>
+        </div>
+        
+        <div class="content" id="content">
+            <div class="loading">Loading payment...</div>
+        </div>
+
+        <div class="footer">
+            <p>Powered by PayMeBro • Multi-Use Payment Links</p>
+        </div>
+    </div>
+
+    <script>
+        const reference = window.location.pathname.split('/').pop();
+
+        async function loadPayment() {
+            try {
+                const response = await fetch(`/api/payment-data/${reference}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayPayment(data);
+                } else {
+                    showError('Payment link not found');
+                }
+            } catch (error) {
+                showError('Error loading payment');
+            }
+        }
+
+        function displayPayment(data) {
+            const { paymentUrl, qrCode, solanaPayUrl, stats } = data;
+            
+            document.getElementById('content').innerHTML = `
+                <div class="title">${paymentUrl.title}</div>
+                <div class="amount">${paymentUrl.amount} ${paymentUrl.currency}</div>
+                <div class="description">${paymentUrl.description || ''}</div>
+
+                ${stats ? `
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-number">${stats.totalPayments}</div>
+                        <div class="stat-label">Payments</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">${stats.totalCollected}</div>
+                        <div class="stat-label">Total Collected</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-number">${paymentUrl.max_uses || '∞'}</div>
+                        <div class="stat-label">Max Uses</div>
+                    </div>
+                </div>
+                ` : ''}
+
+                <div class="qr-section">
+                    <h3>📱 Scan to Pay</h3>
+                    <img class="qr-code" src="${qrCode}" alt="Solana Pay QR Code">
+                    <p>Scan with any Solana wallet</p>
+                    
+                    <a href="${solanaPayUrl}" class="pay-button">
+                        🚀 Pay ${paymentUrl.amount} ${paymentUrl.currency}
+                    </a>
+                    
+                    <p style="margin-top: 1rem; font-size: 0.9rem; color: #666;">
+                        Works with Phantom, Solflare, Backpack & more
+                    </p>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            document.getElementById('content').innerHTML = `
+                <div class="error">
+                    <h3>❌ ${message}</h3>
+                    <p>Please check the payment link and try again.</p>
+                </div>
+            `;
+        }
+
+        loadPayment();
+    </script>
+</body>
+</html>
