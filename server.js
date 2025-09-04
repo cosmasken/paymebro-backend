@@ -843,9 +843,9 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
 
     const base64 = serialized.toString('base64');
 
-    res.json({ 
-      transaction: base64, 
-      message: `Payment of ${amount.toString()} ${paymentUrl.currency} - ${paymentUrl.title}` 
+    res.json({
+      transaction: base64,
+      message: `Payment of ${amount.toString()} ${paymentUrl.currency} - ${paymentUrl.title}`
     });
 
     // Create payment record after successful transaction creation
@@ -872,72 +872,62 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
   }
 });
 
-    const bigAmount = BigNumber(totalAmount);
+const bigAmount = BigNumber(totalAmount);
 
-    if (paymentUrl.currency === 'USDC') {
-      const buyerTokenAccount = await getAssociatedTokenAddress(USDC_MINT, buyerPublicKey);
-      const recipientTokenAccount = await getAssociatedTokenAddress(USDC_MINT, recipientPublicKey);
+if (paymentUrl.currency === 'USDC') {
+  const buyerTokenAccount = await getAssociatedTokenAddress(USDC_MINT, buyerPublicKey);
+  const recipientTokenAccount = await getAssociatedTokenAddress(USDC_MINT, recipientPublicKey);
 
-      const usdcMint = await getMint(connection, USDC_MINT);
+  const usdcMint = await getMint(connection, USDC_MINT);
 
-      const transferInstruction = createTransferCheckedInstruction(
-        buyerTokenAccount,
-        USDC_MINT,
-        recipientTokenAccount,
-        buyerPublicKey,
-        bigAmount.multipliedBy(10 ** usdcMint.decimals).toNumber(),
-        usdcMint.decimals
-      );
+  const transferInstruction = createTransferCheckedInstruction(
+    buyerTokenAccount,
+    USDC_MINT,
+    recipientTokenAccount,
+    buyerPublicKey,
+    bigAmount.multipliedBy(10 ** usdcMint.decimals).toNumber(),
+    usdcMint.decimals
+  );
 
-      const memoInstruction = createMemoInstruction(paymentReference);
-      transaction.add(transferInstruction, memoInstruction);
+  const memoInstruction = createMemoInstruction(paymentReference);
+  transaction.add(transferInstruction, memoInstruction);
 
-    } else {
-      // Use direct SOL amount instead of USD conversion to avoid price API issues
-      const lamports = bigAmount.multipliedBy(LAMPORTS_PER_SOL).toNumber();
+} else {
+  // Use direct SOL amount instead of USD conversion to avoid price API issues
+  const lamports = bigAmount.multipliedBy(LAMPORTS_PER_SOL).toNumber();
 
-      const transferInstruction = SystemProgram.transfer({
-        fromPubkey: buyerPublicKey,
-        toPubkey: recipientPublicKey,
-        lamports: Math.floor(lamports),
-      });
+  const transferInstruction = SystemProgram.transfer({
+    fromPubkey: buyerPublicKey,
+    toPubkey: recipientPublicKey,
+    lamports: Math.floor(lamports),
+  });
 
-      const memoInstruction = createMemoInstruction(paymentReference);
-      transaction.add(transferInstruction, memoInstruction);
-    }
+  const memoInstruction = createMemoInstruction(paymentReference);
+  transaction.add(transferInstruction, memoInstruction);
+}
 
-    const { blockhash } = await connection.getLatestBlockhash('finalized');
-    transaction.recentBlockhash = blockhash;
-    transaction.feePayer = buyerPublicKey;
+const { blockhash } = await connection.getLatestBlockhash('finalized');
+transaction.recentBlockhash = blockhash;
+transaction.feePayer = buyerPublicKey;
 
-    const paymentTxSerialized = transaction.serialize({
-      requireAllSignatures: false,
-      verifySignatures: false,
-    });
-
-    res.json({
-      transaction: paymentTxSerialized.toString('base64'),
-      message: paymentUrl.description || `Pay ${paymentUrl.amount} ${paymentUrl.currency}`,
-      paymentReference
-    });
-
-  } catch (error) {
-    console.error('Multi-transaction POST error:', error);
-    res.status(500).json({ error: 'Failed to create transaction' });
-  }
+const paymentTxSerialized = transaction.serialize({
+  requireAllSignatures: false,
+  verifySignatures: false,
 });
-// try {
-//   const { title, amount, currency, description, merchantId } = req.body;
 
-//   if (!title || !amount || !currency || !merchantId) {
-//     return res.status(400).json({ error: 'Missing required fields' });
-//   }
+res.json({
+  transaction: paymentTxSerialized.toString('base64'),
+  message: paymentUrl.description || `Pay ${paymentUrl.amount} ${paymentUrl.currency}`,
+  paymentReference
+});
 
-//   const reference = randomUUID();
-//   const paymentUrl = `solana:${process.env.BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`;
+// } catch (error) {
+//   console.error('Multi-transaction POST error:', error);
+//   res.status(500).json({ error: 'Failed to create transaction' });
+// }
+// });
 
-//   const linkData = {
-//     user_id: merchantId,
+// WEBHOOK ENDPOINTS
 //     title,
 //     reference,
 //     amount: parseFloat(amount),
