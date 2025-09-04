@@ -792,7 +792,7 @@ app.get('/api/solana-pay/multi-transaction', async (req, res) => {
 
 app.post('/api/solana-pay/multi-transaction', async (req, res) => {
   try {
-    const reference = req.query.reference || req.body.reference;
+    const reference = req.query.reference;
     const { account } = req.body;
 
     if (!account || !reference) {
@@ -812,49 +812,19 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
       return res.status(404).json({ error: 'Payment URL not found or inactive' });
     }
 
-    if (paymentUrl.max_uses && paymentUrl.use_count >= paymentUrl.max_uses) {
-      return res.status(400).json({ error: 'Payment URL usage limit reached' });
-    }
+    // Simple amount handling - use the exact amount from payment URL
+    const amount = new BigNumber(paymentUrl.amount);
+    const recipient = new PublicKey(process.env.AFRIPAY_PLATFORM_WALLET);
+    const referenceKey = new PublicKey(reference);
+    const memo = `PayMeBro: ${paymentUrl.title}`;
 
-    // Create individual payment record
-    const paymentReference = randomUUID();
-    const baseAmount = BigNumber(paymentUrl.amount);
-    const feeRate = BigNumber(process.env.AFRIPAY_FEE_RATE);
-    const fixedFee = BigNumber(process.env.AFRIPAY_FIXED_FEE_USD);
-    const feeAmount = baseAmount.multipliedBy(feeRate).plus(fixedFee);
-    const totalAmount = baseAmount.plus(feeAmount);
-
-    const paymentData = {
-      user_id: paymentUrl.user_id,
-      reference: paymentReference,
-      amount: baseAmount.toNumber(),
-      currency: paymentUrl.currency,
-      status: 'pending',
-      recipient_wallet: process.env.AFRIPAY_PLATFORM_WALLET,
-      total_amount_paid: totalAmount.toNumber(),
-      merchant_amount: baseAmount.toNumber(),
-      fee_amount: feeAmount.toNumber(),
-      description: `${paymentUrl.title} - Payment`,
-      parent_reference: reference,
-      created_at: new Date().toISOString()
-    };
-
-    const { data: payment } = await supabase
-      .from('payments')
-      .insert(paymentData)
-      .select()
-      .single();
-
-    const recipientPublicKey = new PublicKey(process.env.AFRIPAY_PLATFORM_WALLET);
-    const referencePublicKey = new PublicKey(reference);
-
-    // Create transfer using Solana Pay (following official example)
+    // Create transfer exactly like official example
     let transaction = await createTransfer(connection, buyerPublicKey, {
-      recipient: recipientPublicKey,
-      amount: new BigNumber(totalAmount.toNumber()),
+      recipient,
+      amount,
       splToken: paymentUrl.currency === 'SOL' ? undefined : USDC_MINT,
-      reference: referencePublicKey,
-      memo: `PayMeBro: ${paymentUrl.title} - ${paymentReference}`,
+      reference: referenceKey,
+      memo,
     });
 
     // Serialize and deserialize for consistent ordering (from official example)
@@ -871,12 +841,36 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
       requireAllSignatures: false,
     });
 
-    const base64Transaction = serialized.toString('base64');
+    const base64 = serialized.toString('base64');
 
-    res.json({
-      transaction: base64Transaction,
-      message: `Payment of ${totalAmount.toNumber()} ${paymentUrl.currency} - ${paymentUrl.title}`,
+    res.json({ 
+      transaction: base64, 
+      message: `Payment of ${amount.toString()} ${paymentUrl.currency} - ${paymentUrl.title}` 
     });
+
+    // Create payment record after successful transaction creation
+    const paymentData = {
+      user_id: paymentUrl.user_id,
+      reference: randomUUID(),
+      amount: amount.toNumber(),
+      currency: paymentUrl.currency,
+      status: 'processing',
+      recipient_wallet: process.env.AFRIPAY_PLATFORM_WALLET,
+      total_amount_paid: amount.toNumber(),
+      merchant_amount: amount.toNumber(),
+      fee_amount: 0,
+      description: `${paymentUrl.title} - Payment`,
+      parent_reference: reference,
+      created_at: new Date().toISOString()
+    };
+
+    await supabase.from('payments').insert(paymentData);
+
+  } catch (error) {
+    console.error('Multi-transaction POST error:', error);
+    res.status(500).json({ error: 'Failed to create transaction' });
+  }
+});
 
     const bigAmount = BigNumber(totalAmount);
 
