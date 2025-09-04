@@ -388,13 +388,13 @@ app.post('/api/solana-pay/transaction', async (req, res) => {
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = buyerPublicKey;
 
-    const serializedTransaction = transaction.serialize({
+    const singleTxSerialized = transaction.serialize({
       requireAllSignatures: false,
       verifySignatures: false,
     });
 
     res.json({
-      transaction: serializedTransaction.toString('base64'),
+      transaction: singleTxSerialized.toString('base64'),
       message: payment.description || `Pay ${payment.amount} ${payment.currency}`,
     });
 
@@ -860,12 +860,12 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
     const transaction = await createTransfer(connection, buyerPublicKey, transferConfig);
 
     // Serialize transaction
-    const serializedTransaction = transaction.serialize({
+    const multiTxSerialized = transaction.serialize({
       requireAllSignatures: false,
       verifySignatures: false,
     });
 
-    const base64Transaction = serializedTransaction.toString('base64');
+    const base64Transaction = multiTxSerialized.toString('base64');
 
     res.json({
       transaction: base64Transaction,
@@ -910,13 +910,13 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
     transaction.recentBlockhash = blockhash;
     transaction.feePayer = buyerPublicKey;
 
-    const serializedTransaction = transaction.serialize({
+    const paymentTxSerialized = transaction.serialize({
       requireAllSignatures: false,
       verifySignatures: false,
     });
 
     res.json({
-      transaction: serializedTransaction.toString('base64'),
+      transaction: paymentTxSerialized.toString('base64'),
       message: paymentUrl.description || `Pay ${paymentUrl.amount} ${paymentUrl.currency}`,
       paymentReference
     });
