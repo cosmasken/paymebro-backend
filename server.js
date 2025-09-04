@@ -9,8 +9,14 @@ import axios from 'axios';
 import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
 import { Resend } from 'resend';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
 dotenv.config();
+
+// ES module __dirname equivalent
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Initialize Resend
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -486,12 +492,12 @@ app.get('/api/cctp/transfer/:id', async (req, res) => {
 
 // Invoice page
 app.get('/invoice/:id', (req, res) => {
-  res.sendFile(__dirname + '/public/invoice.html');
+  res.sendFile(join(__dirname, 'public', 'invoice.html'));
 });
 
 // Payment page  
 app.get('/pay/:reference', (req, res) => {
-  res.sendFile(__dirname + '/public/payment.html');
+  res.sendFile(join(__dirname, 'public', 'payment.html'));
 });
 
 // Invoice data API
