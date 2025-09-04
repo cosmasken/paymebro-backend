@@ -1026,6 +1026,93 @@ app.get('/health', (req, res) => {
   });
 });
 
+// WEBHOOK ENDPOINTS
+
+// Payment confirmation webhook
+app.post('/api/webhook/payment-confirmed', async (req, res) => {
+  try {
+    const { signature, reference } = req.body;
+
+    if (!signature || !reference) {
+      return res.status(400).json({ error: 'Missing signature or reference' });
+    }
+
+    // Find payment by reference
+    const { data: payment, error: paymentError } = await supabase
+      .from('payments')
+      .select('*, invoices(*)')
+      .eq('reference', reference)
+      .single();
+
+    if (paymentError || !payment) {
+      console.log('Payment not found for reference:', reference);
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    // Update payment status
+    const { error: updateError } = await supabase
+      .from('payments')
+      .update({
+        status: 'completed',
+        signature,
+        confirmed_at: new Date().toISOString()
+      })
+      .eq('reference', reference);
+
+    if (updateError) {
+      console.error('Failed to update payment:', updateError);
+      return res.status(500).json({ error: 'Failed to update payment' });
+    }
+
+    // Get merchant details
+    const { data: merchant, error: merchantError } = await supabase
+      .from('users')
+      .select('email, name')
+      .eq('id', payment.user_id)
+      .single();
+
+    if (!merchantError && merchant?.email) {
+      // Send notification email to merchant
+      try {
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'PayMeBro <payments@payments.paymebro.xyz>',
+          to: merchant.email,
+          subject: `💰 Payment Received - ${payment.amount} ${payment.currency}`,
+          html: `
+            <h2>🎉 Payment Received!</h2>
+            <p><strong>Amount:</strong> ${payment.amount} ${payment.currency}</p>
+            <p><strong>Description:</strong> ${payment.description || 'Payment'}</p>
+            <p><strong>Transaction:</strong> <a href="https://explorer.solana.com/tx/${signature}?cluster=devnet">${signature}</a></p>
+            <p><strong>Reference:</strong> ${reference}</p>
+            <br>
+            <p>The payment has been confirmed on the Solana blockchain.</p>
+          `
+        });
+        console.log(`✅ Payment notification sent to ${merchant.email}`);
+      } catch (emailError) {
+        console.error('❌ Failed to send notification email:', emailError);
+      }
+    }
+
+    // If this is an invoice payment, update invoice status
+    if (payment.invoices) {
+      await supabase
+        .from('invoices')
+        .update({
+          status: 'paid',
+          paid_at: new Date().toISOString()
+        })
+        .eq('reference', reference);
+    }
+
+    res.json({ success: true, message: 'Payment confirmed and notifications sent' });
+
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
