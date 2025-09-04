@@ -391,7 +391,9 @@ app.post('/api/solana-pay/checkout', async (req, res) => {
     const buyerPublicKey = new PublicKey(account);
     const recipient = new PublicKey(session.recipient_wallet);
     const referenceKey = new PublicKey(reference);
-    const amount = new BigNumber(session.amount);
+    
+    // Fix amount handling - ensure it's a proper number
+    const amount = new BigNumber(session.amount.toString());
 
     // Create transfer following official example
     let transaction = await createTransfer(connection, buyerPublicKey, {
@@ -994,8 +996,8 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
       return res.status(404).json({ error: 'Payment URL not found or inactive' });
     }
 
-    // Simple amount handling - use the exact amount from payment URL
-    const amount = new BigNumber(paymentUrl.amount);
+    // Simple amount handling - ensure proper number conversion
+    const amount = new BigNumber(paymentUrl.amount.toString());
     const recipient = new PublicKey(process.env.AFRIPAY_PLATFORM_WALLET);
     const referenceKey = new PublicKey(reference);
     const memo = `PayMeBro: ${paymentUrl.title}`;
