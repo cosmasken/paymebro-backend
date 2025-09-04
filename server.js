@@ -846,7 +846,9 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
       .single();
 
     const recipientPublicKey = new PublicKey(process.env.AFRIPAY_PLATFORM_WALLET);
-    const referencePublicKey = new PublicKey(paymentReference);
+    
+    // Use the original reference (which is a valid PublicKey) for the transfer
+    const referencePublicKey = new PublicKey(reference);
 
     // Create transfer using Solana Pay
     const transferConfig = {
@@ -854,7 +856,7 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
       amount: totalAmount,
       splToken: paymentUrl.currency === 'SOL' ? undefined : USDC_MINT,
       reference: referencePublicKey,
-      memo: `PayMeBro: ${paymentUrl.title}`,
+      memo: `PayMeBro: ${paymentUrl.title} - ${paymentReference}`,
     };
 
     const transaction = await createTransfer(connection, buyerPublicKey, transferConfig);
