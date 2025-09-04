@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL, TransactionInstruction } from '@solana/web3.js';
 import { createTransferCheckedInstruction, getAssociatedTokenAddress, getMint } from '@solana/spl-token';
+import { createTransfer } from '@solana/pay';
 import { createClient } from '@supabase/supabase-js';
 import BigNumber from 'bignumber.js';
 import QRCode from 'qrcode';
