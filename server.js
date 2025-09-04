@@ -288,7 +288,153 @@ app.post('/api/notify-merchant', async (req, res) => {
   }
 });
 
-// SOLANA PAY INTEGRATION
+// CHECKOUT SESSION ENDPOINTS (Following Solana Pay Best Practices)
+
+// Step 2: Create checkout session with reference
+app.post('/api/checkout/create', async (req, res) => {
+  try {
+    const { amount, currency, description, merchantId } = req.body;
+
+    if (!amount || !currency || !merchantId) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Step 3: Generate reference public key and store in database
+    const reference = Keypair.generate().publicKey.toString();
+    
+    const sessionData = {
+      reference,
+      merchant_id: merchantId,
+      amount: parseFloat(amount),
+      currency,
+      description: description || 'Payment',
+      recipient_wallet: process.env.AFRIPAY_PLATFORM_WALLET,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30 min expiry
+    };
+
+    const { data: session, error } = await supabase
+      .from('checkout_sessions')
+      .insert(sessionData)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Step 4: Return reference for confirmation page
+    res.json({
+      success: true,
+      reference,
+      checkoutUrl: `${process.env.BACKEND_URL}/checkout/${reference}`,
+      transactionUrl: `solana:${process.env.BACKEND_URL}/api/solana-pay/checkout?reference=${reference}`
+    });
+
+  } catch (error) {
+    console.error('Checkout creation error:', error);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// Solana Pay transaction request for checkout sessions
+app.get('/api/solana-pay/checkout', async (req, res) => {
+  try {
+    const { reference } = req.query;
+    if (!reference) {
+      return res.status(400).json({ error: 'Missing reference parameter' });
+    }
+
+    // Get checkout session from database
+    const { data: session, error } = await supabase
+      .from('checkout_sessions')
+      .select('*')
+      .eq('reference', reference)
+      .eq('status', 'pending')
+      .single();
+
+    if (error || !session) {
+      return res.status(404).json({ error: 'Checkout session not found or expired' });
+    }
+
+    res.json({
+      label: `PayMeBro - ${session.description}`,
+      icon: 'https://raw.githubusercontent.com/solana-labs/solana-pay/master/core/example/point-of-sale/public/icon.svg',
+    });
+
+  } catch (error) {
+    console.error('GET checkout error:', error);
+    res.status(500).json({ error: 'Failed to get checkout details' });
+  }
+});
+
+app.post('/api/solana-pay/checkout', async (req, res) => {
+  try {
+    const { reference } = req.query;
+    const { account } = req.body;
+
+    if (!account || !reference) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    // Step 6: Validate transaction with stored reference and amount
+    const { data: session, error } = await supabase
+      .from('checkout_sessions')
+      .select('*')
+      .eq('reference', reference)
+      .eq('status', 'pending')
+      .single();
+
+    if (error || !session) {
+      return res.status(404).json({ error: 'Checkout session not found or expired' });
+    }
+
+    const buyerPublicKey = new PublicKey(account);
+    const recipient = new PublicKey(session.recipient_wallet);
+    const referenceKey = new PublicKey(reference);
+    const amount = new BigNumber(session.amount);
+
+    // Create transfer following official example
+    let transaction = await createTransfer(connection, buyerPublicKey, {
+      recipient,
+      amount,
+      splToken: session.currency === 'SOL' ? undefined : USDC_MINT,
+      reference: referenceKey,
+      memo: `PayMeBro: ${session.description}`,
+    });
+
+    // Serialize and deserialize for consistent ordering
+    transaction = Transaction.from(
+      transaction.serialize({
+        verifySignatures: false,
+        requireAllSignatures: false,
+      })
+    );
+
+    const serialized = transaction.serialize({
+      verifySignatures: false,
+      requireAllSignatures: false,
+    });
+
+    const base64 = serialized.toString('base64');
+
+    // Mark session as processing
+    await supabase
+      .from('checkout_sessions')
+      .update({ status: 'processing', updated_at: new Date().toISOString() })
+      .eq('reference', reference);
+
+    res.json({ 
+      transaction: base64, 
+      message: `Payment of ${amount.toString()} ${session.currency} - ${session.description}` 
+    });
+
+  } catch (error) {
+    console.error('POST checkout error:', error);
+    res.status(500).json({ error: 'Failed to create transaction' });
+  }
+});
+
+// EXISTING ENDPOINTS
 
 // Solana Pay transaction request
 app.get('/api/solana-pay/transaction', async (req, res) => {
