@@ -11,6 +11,17 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// Environment variable validation with defaults
+const RPC_ENDPOINT = process.env.RPC_ENDPOINT || 'https://api.devnet.solana.com';
+const USDC_MINT_ADDRESS = process.env.USDC_MINT || '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
+const PLATFORM_WALLET = process.env.AFRIPAY_PLATFORM_WALLET || 'EHwtMrGE6V5fH3xUKYcoHzbouUqfgB4jd7MsqfQfHVSn';
+const FEE_RATE = process.env.AFRIPAY_FEE_RATE || '0.029';
+const FIXED_FEE = process.env.AFRIPAY_FIXED_FEE_USD || '0.30';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+
+console.log('🔗 RPC Endpoint:', RPC_ENDPOINT);
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -20,8 +31,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const connection = new Connection(process.env.RPC_ENDPOINT);
-const USDC_MINT = new PublicKey(process.env.USDC_MINT);
+const connection = new Connection(RPC_ENDPOINT);
+const USDC_MINT = new PublicKey(USDC_MINT_ADDRESS);
 const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
 // Middleware
@@ -90,8 +101,8 @@ app.post('/api/payments', async (req, res) => {
 
     const reference = randomUUID();
     const baseAmount = BigNumber(amount);
-    const feeRate = BigNumber(process.env.AFRIPAY_FEE_RATE);
-    const fixedFee = BigNumber(process.env.AFRIPAY_FIXED_FEE_USD);
+    const feeRate = BigNumber(FEE_RATE);
+    const fixedFee = BigNumber(FIXED_FEE);
 
     const feeAmount = baseAmount.multipliedBy(feeRate).plus(fixedFee);
     const totalAmount = baseAmount.plus(feeAmount);
