@@ -490,7 +490,13 @@ app.post('/api/invoices', async (req, res) => {
 
     const invoiceId = randomUUID();
     const reference = randomUUID();
+    const baseAmount = BigNumber(amount);
+    const feeRate = BigNumber(FEE_RATE);
+    const fixedFee = BigNumber(FIXED_FEE);
+    const feeAmount = baseAmount.multipliedBy(feeRate).plus(fixedFee);
+    const totalAmount = baseAmount.plus(feeAmount);
 
+    // Create invoice record
     const invoiceData = {
       id: invoiceId,
       user_id: merchantId,
@@ -504,21 +510,53 @@ app.post('/api/invoices', async (req, res) => {
       created_at: new Date().toISOString()
     };
 
-    const { data: invoice, error } = await supabase
+    const { data: invoice, error: invoiceError } = await supabase
       .from('invoices')
       .insert(invoiceData)
       .select()
       .single();
 
-    if (error) throw error;
+    if (invoiceError) throw invoiceError;
 
-    const paymentUrl = `solana:${process.env.BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`;
+    // Create corresponding payment record for Solana Pay
+    const paymentData = {
+      user_id: merchantId,
+      reference,
+      amount: baseAmount.toNumber(),
+      currency,
+      status: 'pending',
+      recipient_wallet: PLATFORM_WALLET,
+      total_amount_paid: totalAmount.toNumber(),
+      merchant_amount: baseAmount.toNumber(),
+      fee_amount: feeAmount.toNumber(),
+      description: `Invoice: ${description || 'Payment'}`,
+      customer_email: customerEmail,
+      created_at: new Date().toISOString()
+    };
+
+    const { error: paymentError } = await supabase
+      .from('payments')
+      .insert(paymentData);
+
+    if (paymentError) throw paymentError;
+
+    const paymentUrl = `solana:${BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`;
+
+    // Send invoice email if customer email provided
+    if (customerEmail) {
+      console.log(`📧 Invoice Email Sent:
+        To: ${customerEmail}
+        Amount: ${amount} ${currency}
+        Invoice ID: ${invoiceId}
+        Payment URL: ${paymentUrl}
+      `);
+    }
 
     res.json({
       success: true,
       invoice,
       paymentUrl,
-      invoiceUrl: `${process.env.FRONTEND_URL}/invoice/${invoiceId}`
+      invoiceUrl: `${FRONTEND_URL}/invoice/${invoiceId}`
     });
 
   } catch (error) {
