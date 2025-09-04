@@ -872,6 +872,14 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
   }
 });
 
+// Health check
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // WEBHOOK ENDPOINTS
 // Payment confirmation webhook
 app.post('/api/webhook/payment-confirmed', async (req, res) => {
