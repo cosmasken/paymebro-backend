@@ -869,9 +869,8 @@ app.post('/api/solana-pay/multi-transaction', async (req, res) => {
       transaction.add(transferInstruction, memoInstruction);
 
     } else {
-      const SOL_PRICE_USD = await priceService.getSOLPrice();
-      const solAmount = bigAmount.dividedBy(SOL_PRICE_USD);
-      const lamports = solAmount.multipliedBy(LAMPORTS_PER_SOL).toNumber();
+      // Use direct SOL amount instead of USD conversion to avoid price API issues
+      const lamports = bigAmount.multipliedBy(LAMPORTS_PER_SOL).toNumber();
 
       const transferInstruction = SystemProgram.transfer({
         fromPubkey: buyerPublicKey,
