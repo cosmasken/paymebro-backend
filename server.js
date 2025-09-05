@@ -25,9 +25,9 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 // Environment variable validation with defaults
 const RPC_ENDPOINT = process.env.RPC_ENDPOINT || 'https://api.devnet.solana.com';
 const USDC_MINT_ADDRESS = process.env.USDC_MINT || '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
-const PLATFORM_WALLET = process.env.AFRIPAY_PLATFORM_WALLET || 'EHwtMrGE6V5fH3xUKYcoHzbouUqfgB4jd7MsqfQfHVSn';
-const FEE_RATE = process.env.AFRIPAY_FEE_RATE || '0.029';
-const FIXED_FEE = process.env.AFRIPAY_FIXED_FEE_USD || '0.30';
+const PLATFORM_WALLET = 'EHwtMrGE6V5fH3xUKYcoHzbouUqfgB4jd7MsqfQfHVSn';
+const FEE_RATE = '0.003'; // 0.3% instead of 2.9%
+const FIXED_FEE = '0'; // Remove fixed $0.30 fee
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
@@ -113,11 +113,10 @@ app.post('/api/payments', async (req, res) => {
 
     const reference = Keypair.generate().publicKey.toString();
     const baseAmount = BigNumber(amount);
-    const feeRate = BigNumber(FEE_RATE);
-    const fixedFee = BigNumber(FIXED_FEE);
-
-    const feeAmount = baseAmount.multipliedBy(feeRate).plus(fixedFee);
-    const totalAmount = baseAmount.plus(feeAmount);
+    
+    // No fees for testing - total amount equals base amount
+    const feeAmount = BigNumber(0);
+    const totalAmount = baseAmount;
 
     const paymentData = {
       user_id: userId,
@@ -327,7 +326,7 @@ app.post('/api/checkout/create', async (req, res) => {
       success: true,
       reference,
       checkoutUrl: `${process.env.BACKEND_URL}/checkout/${reference}`,
-      transactionUrl: `solana:${process.env.BACKEND_URL}/api/solana-pay/checkout?reference=${reference}&recipient=${process.env.AFRIPAY_PLATFORM_WALLET}&amount=${amount}&currency=${currency}`
+      transactionUrl: `solana:${process.env.BACKEND_URL}/api/solana-pay/checkout?reference=${reference}&recipient=${PLATFORM_WALLET}&amount=${amount}&currency=${currency}`
     });
 
   } catch (error) {
