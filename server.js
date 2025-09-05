@@ -102,6 +102,42 @@ const createMemoInstruction = (memo, signers = []) => {
 
 // PAYMENT PROCESSING ENDPOINTS
 
+// Static payment page route
+app.get('/pay/:reference', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'payment.html'));
+});
+
+// Payment data API for static pages
+app.get('/api/payment-data/:reference', async (req, res) => {
+  try {
+    const { reference } = req.params;
+    
+    const { data: payment } = await supabase
+      .from('payments')
+      .select('*')
+      .eq('reference', reference)
+      .single();
+
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const qrResponse = await fetch(`${BACKEND_URL}/api/qr/${reference}`);
+    const qrData = await qrResponse.json();
+
+    res.json({
+      success: true,
+      payment,
+      qrCode: qrData.qrCode,
+      paymentUrl: `solana:${BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`
+    });
+
+  } catch (error) {
+    console.error('Payment data error:', error);
+    res.status(500).json({ error: 'Failed to load payment data' });
+  }
+});
+
 // Create payment
 app.post('/api/payments', async (req, res) => {
   try {
@@ -145,6 +181,7 @@ app.post('/api/payments', async (req, res) => {
       payment,
       reference,
       paymentUrl: `solana:${process.env.BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`,
+      shareUrl: `${process.env.BACKEND_URL}/pay/${reference}`,
       feeBreakdown: {
         merchantReceives: baseAmount.toNumber(),
         platformFee: feeAmount.toNumber(),

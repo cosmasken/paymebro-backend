@@ -15,12 +15,11 @@
         .description { color: #666; margin: 1rem 0; text-align: center; }
         .qr-section { text-align: center; margin: 2rem 0; padding: 2rem; background: #f8f9fa; border-radius: 12px; }
         .qr-code { max-width: 250px; border-radius: 12px; margin: 1rem 0; }
-        .pay-button { display: inline-block; background: #14F195; color: #000; padding: 1.2rem 2.5rem; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 1.1rem; margin: 1.5rem 0; transition: all 0.3s; }
+        .pay-button { display: inline-block; background: #14F195; color: #000; padding: 1.2rem 2.5rem; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 1.1rem; margin: 1.5rem 0; transition: all 0.3s; cursor: pointer; border: none; }
         .pay-button:hover { background: #00D084; transform: translateY(-2px); }
-        .stats { display: flex; justify-content: space-around; background: #f8f9fa; padding: 1rem; border-radius: 8px; margin: 1rem 0; }
-        .stat { text-align: center; }
-        .stat-number { font-size: 1.5rem; font-weight: bold; color: #333; }
-        .stat-label { font-size: 0.9rem; color: #666; }
+        .status { padding: 1rem; border-radius: 8px; margin: 1rem 0; text-align: center; font-weight: bold; }
+        .status.pending { background: #fff3cd; color: #856404; }
+        .status.confirmed { background: #d4edda; color: #155724; }
         .footer { text-align: center; padding: 1rem; color: #666; font-size: 0.9rem; }
         .loading { text-align: center; padding: 2rem; }
         .error { text-align: center; padding: 2rem; color: #dc3545; }
@@ -38,7 +37,7 @@
         </div>
 
         <div class="footer">
-            <p>Powered by PayMeBro • Multi-Use Payment Links</p>
+            <p>Powered by PayMeBro • Secure Solana Payments</p>
         </div>
     </div>
 
@@ -48,6 +47,70 @@
         async function loadPayment() {
             try {
                 const response = await fetch(`/api/payment-data/${reference}`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    document.getElementById('content').innerHTML = `
+                        <div class="error">Payment not found</div>
+                    `;
+                    return;
+                }
+
+                const payment = data.payment;
+                document.getElementById('content').innerHTML = `
+                    <div class="amount">${payment.amount} ${payment.currency}</div>
+                    <div class="description">${payment.description || 'Payment'}</div>
+                    
+                    <div class="status ${payment.status}">
+                        Status: ${payment.status.toUpperCase()}
+                    </div>
+
+                    <div class="qr-section">
+                        <h3>Scan with Solana Wallet</h3>
+                        <img src="${data.qrCode}" alt="Payment QR Code" class="qr-code">
+                        <br>
+                        <button class="pay-button" onclick="payWithWallet()">
+                            Pay with Wallet
+                        </button>
+                    </div>
+                `;
+
+                // Check payment status every 3 seconds
+                if (payment.status === 'pending') {
+                    setTimeout(checkPaymentStatus, 3000);
+                }
+
+            } catch (error) {
+                document.getElementById('content').innerHTML = `
+                    <div class="error">Failed to load payment</div>
+                `;
+            }
+        }
+
+        async function checkPaymentStatus() {
+            try {
+                const response = await fetch(`/api/payments/${reference}`);
+                const data = await response.json();
+                
+                if (data.payment && data.payment.status === 'confirmed') {
+                    location.reload();
+                } else if (data.payment && data.payment.status === 'pending') {
+                    setTimeout(checkPaymentStatus, 3000);
+                }
+            } catch (error) {
+                console.error('Status check failed:', error);
+            }
+        }
+
+        function payWithWallet() {
+            const paymentUrl = `solana:${window.location.origin}/api/solana-pay/transaction?reference=${reference}`;
+            window.location.href = paymentUrl;
+        }
+
+        loadPayment();
+    </script>
+</body>
+</html>
                 const data = await response.json();
                 
                 if (data.success) {
