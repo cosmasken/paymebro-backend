@@ -112,29 +112,29 @@ app.get('/api/payment-data/:reference', async (req, res) => {
   try {
     const { reference } = req.params;
     
-    const { data: payment } = await supabase
+    const { data: payment, error } = await supabase
       .from('payments')
       .select('*')
       .eq('reference', reference)
       .single();
 
-    if (!payment) {
-      return res.status(404).json({ error: 'Payment not found' });
+    if (error || !payment) {
+      return res.json({ success: false, error: 'Payment not found' });
     }
 
-    const qrResponse = await fetch(`${BACKEND_URL}/api/qr/${reference}`);
-    const qrData = await qrResponse.json();
+    const paymentUrl = `solana:${BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`;
+    const qrCode = await QRCode.toDataURL(paymentUrl);
 
     res.json({
       success: true,
       payment,
-      qrCode: qrData.qrCode,
-      paymentUrl: `solana:${BACKEND_URL}/api/solana-pay/transaction?reference=${reference}`
+      qrCode,
+      paymentUrl
     });
 
   } catch (error) {
     console.error('Payment data error:', error);
-    res.status(500).json({ error: 'Failed to load payment data' });
+    res.json({ success: false, error: 'Failed to load payment data' });
   }
 });
 
