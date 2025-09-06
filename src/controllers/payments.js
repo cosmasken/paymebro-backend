@@ -34,12 +34,23 @@ const createPayment = asyncHandler(async (req, res) => {
 
   const url = encodeURL(urlParams);
 
+  // Determine currency based on SPL token
+  let currency = 'SOL';
+  if (splToken) {
+    // Map common SPL token mints to their symbols
+    const tokenMap = {
+      '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU': 'USDC', // USDC devnet
+      'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'USDC', // USDC mainnet
+    };
+    currency = tokenMap[splToken] || 'SPL';
+  }
+
   // Save payment to database
   const paymentData = {
     reference: reference.toString(),
     web3auth_user_id: web3AuthUserId,
     amount: amount.toString(),
-    currency: splToken ? 'SPL' : (chain === 'solana' ? 'SOL' : 'ETH'),
+    currency,
     chain,
     recipient_address: MERCHANT_WALLET.toString(),
     label,

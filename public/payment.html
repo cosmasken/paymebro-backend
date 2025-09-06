@@ -137,7 +137,23 @@
                 
                 if (data.success && data.payment) {
                     const payment = data.payment;
-                    const paymentUrl = `solana:${payment.recipient_address}?amount=${payment.amount}&reference=${payment.reference}`;
+                    let paymentUrl = `solana:${payment.recipient_address}?amount=${payment.amount}&reference=${payment.reference}`;
+                    
+                    // Add SPL token parameter if present
+                    if (payment.spl_token_mint) {
+                        paymentUrl += `&spl-token=${payment.spl_token_mint}`;
+                    }
+                    
+                    // Add label and message if present
+                    if (payment.label) {
+                        paymentUrl += `&label=${encodeURIComponent(payment.label)}`;
+                    }
+                    if (payment.message) {
+                        paymentUrl += `&message=${encodeURIComponent(payment.message)}`;
+                    }
+                    if (payment.memo) {
+                        paymentUrl += `&memo=${encodeURIComponent(payment.memo)}`;
+                    }
                     
                     // Generate QR code
                     new QRCode(document.getElementById('qrcode'), {
