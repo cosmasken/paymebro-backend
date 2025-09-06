@@ -12,34 +12,42 @@ const { asyncHandler } = require('../middleware/errorHandler');
  * Create a new payment request
  */
 const createPayment = asyncHandler(async (req, res) => {
-  const { amount, label, message, memo, customerEmail, web3AuthUserId, chain } = req.body;
+  const { amount, label, message, memo, customerEmail, web3AuthUserId, chain, splToken } = req.body;
   
   const reference = new Keypair().publicKey;
   const amountBigNumber = new BigNumber(amount);
   
   // Create payment URL for Solana Pay
-  const url = encodeURL({
+  const urlParams = {
     recipient: MERCHANT_WALLET,
     amount: amountBigNumber,
     reference,
     label,
     message,
     memo
-  });
+  };
+
+  // Add SPL token if specified
+  if (splToken) {
+    urlParams.splToken = new PublicKey(splToken);
+  }
+
+  const url = encodeURL(urlParams);
 
   // Save payment to database
   const paymentData = {
     reference: reference.toString(),
     web3auth_user_id: web3AuthUserId,
     amount: amount.toString(),
-    currency: chain === 'solana' ? 'SOL' : 'ETH',
+    currency: splToken ? 'SPL' : (chain === 'solana' ? 'SOL' : 'ETH'),
     chain,
     recipient_address: MERCHANT_WALLET.toString(),
     label,
     message,
     memo,
     status: 'pending',
-    customer_email: customerEmail
+    customer_email: customerEmail,
+    spl_token_mint: splToken || null
   };
 
   const payment = await database.createPayment(paymentData);
@@ -117,14 +125,21 @@ const confirmPayment = asyncHandler(async (req, res) => {
     const signatureInfo = await findReference(connection, referencePublicKey, { finality: 'confirmed' });
     
     // Validate the transfer
+    const validateParams = {
+      recipient: MERCHANT_WALLET,
+      amount: new BigNumber(payment.amount),
+      reference: referencePublicKey
+    };
+
+    // Add SPL token if payment uses one
+    if (payment.spl_token_mint) {
+      validateParams.splToken = new PublicKey(payment.spl_token_mint);
+    }
+
     await validateTransfer(
       connection,
       signatureInfo.signature,
-      {
-        recipient: MERCHANT_WALLET,
-        amount: new BigNumber(payment.amount),
-        reference: referencePublicKey
-      },
+      validateParams,
       { commitment: 'confirmed' }
     );
 

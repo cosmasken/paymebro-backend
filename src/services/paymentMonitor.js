@@ -84,14 +84,21 @@ class PaymentMonitor {
       );
 
       // Validate the transfer
+      const validateParams = {
+        recipient: MERCHANT_WALLET,
+        amount: new BigNumber(payment.amount),
+        reference: referencePublicKey
+      };
+
+      // Add SPL token if payment uses one
+      if (payment.spl_token_mint) {
+        validateParams.splToken = new PublicKey(payment.spl_token_mint);
+      }
+
       await validateTransfer(
         connection,
         signatureInfo.signature,
-        {
-          recipient: MERCHANT_WALLET,
-          amount: new BigNumber(payment.amount),
-          reference: referencePublicKey
-        },
+        validateParams,
         { commitment: 'confirmed' }
       );
 

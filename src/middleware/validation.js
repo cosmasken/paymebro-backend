@@ -12,7 +12,8 @@ const validatePaymentRequest = (req, res, next) => {
     memo: Joi.string().max(500),
     customerEmail: Joi.string().email(),
     web3AuthUserId: Joi.string().required(),
-    chain: Joi.string().valid('solana', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'avalanche').default('solana')
+    chain: Joi.string().valid('solana', 'ethereum', 'polygon', 'arbitrum', 'optimism', 'avalanche').default('solana'),
+    splToken: Joi.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/).optional()
   });
 
   const { error, value } = schema.validate(req.body);
