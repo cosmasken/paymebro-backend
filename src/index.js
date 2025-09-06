@@ -5,6 +5,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 const path = require('path');
+const { createServer } = require('http');
+const { initializeWebSocket } = require('./services/websocket');
 const logger = require('./utils/logger');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const healthCheck = require('./services/healthCheck');
@@ -14,7 +16,11 @@ const paymentMonitor = require('./services/paymentMonitor');
 dotenv.config();
 
 const app = express();
+const server = createServer(app);
 const PORT = process.env.PORT || 3000;
+
+// Initialize WebSocket
+initializeWebSocket(server);
 
 // Security middleware
 app.use(helmet({
@@ -92,8 +98,12 @@ app.get('/health/live', (req, res) => {
 // API Routes
 const paymentRoutes = require('./routes/payments');
 const userRoutes = require('./routes/users');
+const webhookRoutes = require('./routes/webhooks');
+const metricsRoutes = require('./routes/metrics');
 app.use('/api/payments', paymentRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/metrics', metricsRoutes);
 
 // Payment page route
 app.get('/payment/:reference', (req, res) => {
@@ -140,13 +150,15 @@ process.on('uncaughtException', (error) => {
 });
 
 // Start server
-const server = app.listen(PORT, () => {
+server.listen(PORT, () => {
   logger.info(`Solana Pay server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
   logger.info(`Health check available at: http://localhost:${PORT}/health`);
+  logger.info('WebSocket server initialized');
   
   // Start automatic payment monitoring
   paymentMonitor.startMonitoring();
+  logger.info('Payment monitoring started');
 });
 
 module.exports = app;

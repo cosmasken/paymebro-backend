@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Transaction Request Test</title>
+    <script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 400px; margin: 0 auto; text-align: center; }
+        #qrcode { margin: 20px 0; }
+        .url { word-break: break-all; background: #f5f5f5; padding: 10px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Transaction Request Test</h1>
+        <p>Enter your payment reference:</p>
+        <input type="text" id="referenceInput" placeholder="Payment reference" style="width: 100%; padding: 8px;">
+        <button onclick="generateQR()" style="padding: 10px 20px; margin: 10px;">Generate QR</button>
+        
+        <div id="qrcode"></div>
+        <div id="urlDisplay" class="url" style="display: none;"></div>
+        
+        <p><strong>Instructions:</strong></p>
+        <ol style="text-align: left;">
+            <li>Enter payment reference above</li>
+            <li>Click "Generate QR"</li>
+            <li>Scan QR with Solana wallet (Phantom, Solflare)</li>
+            <li>Approve transaction in wallet</li>
+        </ol>
+    </div>
+    
+    <script>
+        function generateQR() {
+            const reference = document.getElementById('referenceInput').value.trim();
+            if (!reference) {
+                alert('Please enter a payment reference');
+                return;
+            }
+            
+            // Clear previous QR
+            document.getElementById('qrcode').innerHTML = '';
+            
+            // Use current domain (works with ngrok)
+            const transactionRequestUrl = `solana:${window.location.origin}/api/transaction-requests/${reference}`;
+            
+            new QRCode(document.getElementById('qrcode'), {
+                text: transactionRequestUrl,
+                width: 256,
+                height: 256
+            });
+            
+            document.getElementById('urlDisplay').textContent = transactionRequestUrl;
+            document.getElementById('urlDisplay').style.display = 'block';
+            
+            console.log('Transaction Request URL:', transactionRequestUrl);
+        }
+    </script>
+</body>
+</html>

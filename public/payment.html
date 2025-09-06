@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PayMeBro Payment</title>
     <script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; }
@@ -95,6 +96,31 @@
     <script>
         const reference = window.location.pathname.split('/').pop();
         let paymentUrl = '';
+
+        // Initialize WebSocket connection
+        const socket = io();
+        
+        // Join payment room for real-time updates
+        socket.emit('join-payment', reference);
+        
+        // Listen for real-time payment updates
+        socket.on('payment-update', (data) => {
+            console.log('Real-time update received:', data);
+            if (data.status === 'confirmed') {
+                updateStatus('confirmed');
+                showSuccessMessage();
+            }
+        });
+
+        function showSuccessMessage() {
+            document.getElementById('success-section').style.display = 'block';
+            document.getElementById('qr-section').style.display = 'none';
+            
+            // Show celebration animation
+            const header = document.getElementById('header');
+            header.style.background = 'linear-gradient(135deg, #14F195 0%, #00D084 100%)';
+            header.style.color = '#000';
+        }
 
         async function loadPayment() {
             try {

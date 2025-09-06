@@ -5,6 +5,8 @@ const { PublicKey } = require('@solana/web3.js');
 const BigNumber = require('bignumber.js');
 const database = require('./database');
 const emailService = require('./emailService');
+const { sendWebhook } = require('../controllers/webhooks');
+const { notifyPaymentUpdate } = require('./websocket');
 const logger = require('../utils/logger');
 
 class PaymentMonitor {
@@ -131,6 +133,22 @@ class PaymentMonitor {
         'confirmed', 
         signature
       );
+
+      // Send webhook notification
+      await sendWebhook('payment.confirmed', {
+        reference: payment.reference,
+        amount: payment.amount,
+        currency: payment.currency,
+        signature,
+        timestamp: new Date().toISOString()
+      });
+
+      // Send real-time WebSocket update
+      notifyPaymentUpdate(payment.reference, 'confirmed', {
+        amount: payment.amount,
+        currency: payment.currency,
+        signature
+      });
 
       // Create transaction record
       await database.getClient()
