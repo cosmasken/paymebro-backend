@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PayMeBro Payment</title>
+    <script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 2rem auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; text-align: center; }
+        .header.confirmed { background: linear-gradient(135deg, #14F195 0%, #00D084 100%); color: #000; }
+        .content { padding: 2rem; }
+        .amount { font-size: 2.5rem; font-weight: bold; color: #333; margin: 1rem 0; text-align: center; }
+        .details { background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 1rem 0; }
+        .detail-row { display: flex; justify-content: space-between; margin: 0.5rem 0; align-items: center; }
+        .detail-row span:first-child { color: #666; }
+        .detail-row span:last-child { font-weight: 500; }
+        .qr-section { text-align: center; margin: 2rem 0; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; }
+        .qr-code { margin: 1rem 0; }
+        .pay-button { display: inline-block; background: #14F195; color: #000; padding: 1rem 2rem; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 1rem 0; transition: all 0.3s; }
+        .pay-button:hover { background: #00D084; transform: translateY(-2px); }
+        .status { padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: bold; display: inline-block; margin-top: 1rem; }
+        .status-pending { background: rgba(255,255,255,0.2); color: white; }
+        .status-confirmed { background: rgba(0,0,0,0.1); color: #000; }
+        .status-failed { background: #f8d7da; color: #721c24; }
+        .footer { text-align: center; padding: 1rem; color: #666; font-size: 0.9rem; border-top: 1px solid #eee; }
+        .loading { text-align: center; padding: 2rem; color: #666; }
+        .success-message { text-align: center; margin: 2rem 0; padding: 1.5rem; background: #d1edff; border-radius: 8px; color: #0c5460; }
+        .url-input { width: 100%; padding: 8px; font-size: 12px; border: 1px solid #ddd; border-radius: 4px; margin: 0.5rem 0; }
+        .copy-button { background: #6c757d; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+        .copy-button:hover { background: #5a6268; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header" id="header">
+            <h1>💳 PayMeBro Payment</h1>
+            <div class="status status-pending" id="status">Loading...</div>
+        </div>
+        
+        <div id="loading" class="loading">Loading payment details...</div>
+        
+        <div id="payment-details" style="display: none;">
+            <div class="content">
+                <div class="amount" id="payment-amount"></div>
+                
+                <div class="details">
+                    <div class="detail-row">
+                        <span>Description:</span>
+                        <span id="payment-message"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Label:</span>
+                        <span id="payment-label"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Network:</span>
+                        <span id="payment-chain"></span>
+                    </div>
+                    <div class="detail-row">
+                        <span>Reference:</span>
+                        <span id="payment-reference" style="font-family: monospace; font-size: 0.8rem;"></span>
+                    </div>
+                </div>
+
+                <div id="qr-section" style="display: none;">
+                    <div class="qr-section">
+                        <h3>📱 Scan to Pay with Solana Wallet</h3>
+                        <div id="qrcode" class="qr-code"></div>
+                        <p style="margin: 1rem 0; color: #666;">Scan with Phantom, Solflare, or any Solana wallet</p>
+                        
+                        <div id="payment-url" style="margin-top: 1rem;">
+                            <input type="text" id="url-input" class="url-input" readonly>
+                            <button onclick="copyUrl()" class="copy-button">Copy URL</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="success-section" style="display: none;">
+                    <div class="success-message">
+                        <h3 style="margin: 0 0 0.5rem 0;">✅ Payment Confirmed!</h3>
+                        <p style="margin: 0;">Your transaction has been successfully processed and confirmed on the blockchain.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Powered by PayMeBro • Secure Solana Payments</p>
+        </div>
+    </div>
+
+    <script>
+        const reference = window.location.pathname.split('/').pop();
+        let paymentUrl = '';
+
+        async function loadPayment() {
+            try {
+                const response = await fetch(`/api/payments/${reference}`);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error);
+                }
+
+                const payment = data.payment;
+                
+                document.getElementById('payment-amount').textContent = `${payment.amount} ${payment.currency}`;
+                document.getElementById('payment-message').textContent = payment.message;
+                document.getElementById('payment-label').textContent = payment.label;
+                document.getElementById('payment-chain').textContent = payment.chain.toUpperCase();
+                document.getElementById('payment-reference').textContent = payment.reference;
+                
+                updateStatus(payment.status);
+                
+                // Generate QR code if pending
+                if (payment.status === 'pending') {
+                    await generateQR();
+                } else if (payment.status === 'confirmed') {
+                    document.getElementById('success-section').style.display = 'block';
+                }
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('payment-details').style.display = 'block';
+                
+            } catch (error) {
+                document.getElementById('loading').textContent = `Error: ${error.message}`;
+            }
+        }
+
+        async function generateQR() {
+            try {
+                const response = await fetch(`/api/payments/${reference}`);
+                const data = await response.json();
+                
+                if (data.success && data.payment) {
+                    const payment = data.payment;
+                    const paymentUrl = `solana:${payment.recipient_address}?amount=${payment.amount}&reference=${payment.reference}`;
+                    
+                    // Generate QR code
+                    new QRCode(document.getElementById('qrcode'), {
+                        text: paymentUrl,
+                        width: 200,
+                        height: 200,
+                        colorDark: '#1f2937',
+                        colorLight: '#ffffff'
+                    });
+                    
+                    document.getElementById('url-input').value = paymentUrl;
+                    document.getElementById('qr-section').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('QR generation failed:', error);
+            }
+        }
+
+        function updateStatus(status) {
+            const statusEl = document.getElementById('status');
+            const headerEl = document.getElementById('header');
+            
+            statusEl.className = `status status-${status}`;
+            
+            if (status === 'confirmed') {
+                statusEl.textContent = '✅ Payment Confirmed';
+                headerEl.className = 'header confirmed';
+                document.getElementById('qr-section').style.display = 'none';
+                document.getElementById('success-section').style.display = 'block';
+            } else if (status === 'pending') {
+                statusEl.textContent = '⏳ Awaiting Payment';
+            } else if (status === 'failed') {
+                statusEl.textContent = '❌ Payment Failed';
+            }
+        }
+
+        function copyUrl() {
+            const urlInput = document.getElementById('url-input');
+            urlInput.select();
+            document.execCommand('copy');
+            
+            const button = event.target;
+            const originalText = button.textContent;
+            button.textContent = 'Copied!';
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 2000);
+        }
+
+        // Auto-refresh status every 5 seconds
+        setInterval(async () => {
+            try {
+                const response = await fetch(`/api/payments/${reference}/status`);
+                const data = await response.json();
+                if (data.success) {
+                    updateStatus(data.status);
+                }
+            } catch (error) {
+                console.error('Status check failed:', error);
+            }
+        }, 5000);
+
+        // Load payment on page load
+        loadPayment();
+    </script>
+</body>
+</html>
