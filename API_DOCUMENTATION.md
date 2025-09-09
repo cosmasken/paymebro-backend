@@ -61,6 +61,13 @@ Content-Type: application/json
 POST /api/payments/{reference}/invoice
 ```
 
+### Manual Confirm Payment (Testing)
+```http
+POST /api/payments/{reference}/confirm
+```
+
+**Note**: This endpoint manually confirms a payment without requiring a transaction signature. Used for testing purposes only.
+
 ### Confirm Payment
 ```http
 POST /api/payments/confirm
@@ -72,7 +79,14 @@ Content-Type: application/json
 }
 ```
 
-**Note**: Payments remain in "pending" status until confirmed via this endpoint with a valid Solana transaction signature. The system does not automatically detect on-chain transactions.
+**Automatic Payment Processing**: The system runs automatic payment monitoring every 15 seconds that:
+- Checks all pending payments for on-chain confirmation
+- Uses Solana Pay's `findReference` to detect transactions
+- Validates transfer amounts and recipients
+- Automatically updates payment status to "confirmed" when detected
+- Sends webhooks, emails, and WebSocket notifications
+
+Payments can also be manually confirmed via the endpoints above.
 
 ---
 
@@ -266,6 +280,32 @@ Content-Type: application/json
   "url": "https://your-app.com/webhook",
   "events": ["payment.confirmed", "subscription.created"],
   "web3AuthUserId": "<web3auth_user_id>"
+}
+```
+
+---
+
+## 📧 Emails API (`/api/emails`)
+
+### Get Pending Emails
+```http
+GET /api/emails/pending
+x-user-id: <web3auth_user_id>
+```
+
+### Process Email Queue
+```http
+POST /api/emails/process
+```
+
+### Send Test Email
+```http
+POST /api/emails/test
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "userId": "<web3auth_user_id>"
 }
 ```
 
