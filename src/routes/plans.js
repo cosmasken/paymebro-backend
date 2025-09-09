@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { asyncHandler } = require('../middleware/errorHandler');
-const { pool } = require('../database/connection');
+const database = require('../services/database');
 const DeterministicAddressService = require('../services/deterministicAddressService');
 const logger = require('../utils/logger');
 
@@ -79,7 +79,7 @@ router.post('/upgrade', asyncHandler(async (req, res) => {
     });
   }
 
-  const client = await pool.connect();
+  const client = await database.getClient().connect();
   
   try {
     await client.query(
