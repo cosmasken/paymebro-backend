@@ -10,14 +10,18 @@ const errorHandler = (err, req, res, next) => {
     url: req.url,
     method: req.method,
     ip: req.ip,
-    userAgent: req.get('User-Agent')
+    userAgent: req.get('User-Agent'),
+    body: req.body,
+    params: req.params,
+    query: req.query
   });
 
   // Operational errors
   if (err.isOperational) {
     return res.status(err.statusCode || 500).json({
       success: false,
-      error: err.message
+      error: err.message,
+      details: process.env.NODE_ENV === 'development' ? err.details : undefined
     });
   }
 
@@ -43,7 +47,8 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     error: process.env.NODE_ENV === 'production' 
       ? 'Internal server error' 
-      : err.message
+      : err.message,
+    details: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 };
 
@@ -51,6 +56,13 @@ const errorHandler = (err, req, res, next) => {
  * 404 handler
  */
 const notFoundHandler = (req, res) => {
+  logger.info('Route not found:', {
+    url: req.url,
+    method: req.method,
+    ip: req.ip,
+    userAgent: req.get('User-Agent')
+  });
+  
   res.status(404).json({
     success: false,
     error: 'Route not found'

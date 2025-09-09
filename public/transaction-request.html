@@ -1,54 +1,189 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Transaction Request Test</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction Request Receipt</title>
     <script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        .container { max-width: 400px; margin: 0 auto; text-align: center; }
-        #qrcode { margin: 20px 0; }
-        .url { word-break: break-all; background: #f5f5f5; padding: 10px; margin: 10px 0; }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #333;
+        }
+        .receipt-container {
+            max-width: 400px;
+            background: #fff;
+            border: 2px solid #000;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .header {
+            border-bottom: 2px dashed #000;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 0;
+            text-transform: uppercase;
+        }
+        .header p {
+            font-size: 12px;
+            margin: 5px 0;
+            color: #555;
+        }
+        .input-group {
+            margin: 20px 0;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            border: 1px solid #000;
+            border-radius: 4px;
+            background: #f9f9f9;
+            outline: none;
+        }
+        input[type="text"]:focus {
+            border-color: #4a90e2;
+            background: #fff;
+        }
+        button {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+            text-transform: uppercase;
+        }
+        button:hover {
+            background-color: #333;
+        }
+        #qrcode {
+            margin: 20px auto;
+            display: flex;
+            justify-content: center;
+            background: #fff;
+            padding: 10px;
+            border: 1px solid #000;
+        }
+        .url {
+            background: #f9f9f9;
+            padding: 10px;
+            border: 1px dashed #000;
+            border-radius: 4px;
+            word-break: break-all;
+            font-size: 12px;
+            color: #333;
+            margin: 15px 0;
+        }
+        .instructions {
+            text-align: left;
+            margin-top: 20px;
+            font-size: 12px;
+            border-top: 2px dashed #000;
+            padding-top: 15px;
+        }
+        .instructions h3 {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        .instructions ol {
+            padding-left: 20px;
+            margin: 0;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 10px;
+            color: #555;
+            border-top: 2px dashed #000;
+            padding-top: 10px;
+        }
+        @media (max-width: 480px) {
+            .receipt-container {
+                padding: 15px;
+            }
+            .header h1 {
+                font-size: 16px;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🔗 Transaction Request Test</h1>
-        <p>Enter your payment reference:</p>
-        <input type="text" id="referenceInput" placeholder="Payment reference" style="width: 100%; padding: 8px;">
-        <button onclick="generateQR()" style="padding: 10px 20px; margin: 10px;">Generate QR</button>
+    <div class="receipt-container">
+        <div class="header">
+            <h1>Transaction Request Receipt</h1>
+            <p>Secure Payment Processing</p>
+            <p>Generated on: September 09, 2025</p>
+        </div>
+        
+        <div class="input-group">
+            <input type="text" id="referenceInput" placeholder="Payment Reference" aria-label="Payment Reference">
+            <button onclick="generateQR()">Generate QR Code</button>
+        </div>
         
         <div id="qrcode"></div>
         <div id="urlDisplay" class="url" style="display: none;"></div>
         
-        <p><strong>Instructions:</strong></p>
-        <ol style="text-align: left;">
-            <li>Enter payment reference above</li>
-            <li>Click "Generate QR"</li>
-            <li>Scan QR with Solana wallet (Phantom, Solflare)</li>
-            <li>Approve transaction in wallet</li>
-        </ol>
+        <div class="instructions">
+            <h3>Payment Instructions</h3>
+            <ol>
+                <li>Enter payment reference above.</li>
+                <li>Click "Generate QR Code".</li>
+                <li>Scan QR with Solana wallet (Phantom, Solflare).</li>
+                <li>Approve transaction in wallet.</li>
+            </ol>
+        </div>
+        
+        <div class="footer">
+            <p>Powered by SecurePay | Contact: support@securepay.com</p>
+        </div>
     </div>
     
     <script>
         function generateQR() {
             const reference = document.getElementById('referenceInput').value.trim();
             if (!reference) {
-                alert('Please enter a payment reference');
+                alert('Please enter a valid payment reference.');
                 return;
             }
             
-            // Clear previous QR
+            // Clear previous QR code
             document.getElementById('qrcode').innerHTML = '';
             
-            // Use current domain (works with ngrok)
-            const transactionRequestUrl = `solana:${window.location.origin}/api/transaction-requests/${reference}`;
+            // Generate transaction request URL
+            const transactionRequestUrl = `solana:${window.location.origin}/api/transaction-requests/${encodeURIComponent(reference)}`;
             
+            // Generate QR code
             new QRCode(document.getElementById('qrcode'), {
                 text: transactionRequestUrl,
-                width: 256,
-                height: 256
+                width: 200,
+                height: 200,
+                colorDark: '#000000',
+                colorLight: '#ffffff'
             });
             
+            // Display URL
             document.getElementById('urlDisplay').textContent = transactionRequestUrl;
             document.getElementById('urlDisplay').style.display = 'block';
             

@@ -1,8 +1,38 @@
 'use strict';
+/**
+ * Main entry point for the Solana Pay server application
+ * 
+ * This application provides a REST API for creating and managing Solana Pay payments,
+ * with real-time updates via WebSockets, user management, and payment monitoring.
+ * 
+ * Features:
+ * - Payment creation and management with Solana Pay URLs
+ * - Real-time payment status updates via WebSockets
+ * - User registration and onboarding
+ * - Automatic payment monitoring and confirmation
+ * - Email notifications
+ * - Analytics and metrics tracking
+ * 
+ * Security:
+ * - Rate limiting to prevent abuse
+ * - Input validation and sanitization
+ * - Helmet.js security middleware
+ * - CORS configuration
+ * 
+ * Environment Variables:
+ * - PORT: Server port (default: 3000)
+ * - NODE_ENV: Environment (development|production)
+ * - SUPABASE_URL: Supabase database URL
+ * - SUPABASE_SERVICE_KEY: Supabase service role key
+ * - ADMIN_API_KEY: API key for admin endpoints
+ * - RESEND_API_KEY: Resend API key for email notifications
+ * - FROM_EMAIL: Sender email address
+ * - ALLOWED_ORIGINS: Comma-separated list of allowed CORS origins (production only)
+ */
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 const path = require('path');
 const { createServer } = require('http');
@@ -11,6 +41,7 @@ const logger = require('./utils/logger');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const healthCheck = require('./services/healthCheck');
 const paymentMonitor = require('./services/paymentMonitor');
+const { generalApiLimiter } = require('./middleware/rateLimiting');
 
 // Load environment variables
 dotenv.config();
@@ -24,7 +55,33 @@ initializeWebSocket(server);
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdn.socket.io"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https:", "wss:"],
+      fontSrc: ["'self'", "https:", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"]
+    }
+  },
+  dnsPrefetchControl: true,
+  frameguard: true,
+  hidePoweredBy: true,
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  },
+  ieNoOpen: true,
+  noSniff: true,
+  referrerPolicy: {
+    policy: "strict-origin-when-cross-origin"
+  },
+  xssFilter: true
 }));
 
 app.use(cors({
@@ -35,14 +92,7 @@ app.use(cors({
 }));
 
 // Rate limiting
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-  message: { success: false, error: 'Too many requests from this IP' },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-app.use('/api', limiter);
+app.use('/api', generalApiLimiter);
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -99,11 +149,21 @@ app.get('/health/live', (req, res) => {
 const paymentRoutes = require('./routes/payments');
 const userRoutes = require('./routes/users');
 const webhookRoutes = require('./routes/webhooks');
-const metricsRoutes = require('./routes/metrics');
+const templateRoutes = require('./routes/templates');
+const analyticsRoutes = require('./routes/analytics');
+const subscriptionRoutes = require('./routes/subscriptions');
+const emailRoutes = require('./routes/emails');
+const planRoutes = require('./routes/plans');
+
+// Register API routes
 app.use('/api/payments', paymentRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/webhooks', webhookRoutes);
-app.use('/api/metrics', metricsRoutes);
+app.use('/api/templates', templateRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/emails', emailRoutes);
+app.use('/api/plans', planRoutes);
 
 // Payment page route
 app.get('/payment/:reference', (req, res) => {

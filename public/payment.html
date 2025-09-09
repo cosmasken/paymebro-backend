@@ -3,41 +3,190 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PayMeBro Payment</title>
+    <title>PayMeBro Payment Receipt</title>
     <script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; }
-        .container { max-width: 600px; margin: 2rem auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; text-align: center; }
-        .header.confirmed { background: linear-gradient(135deg, #14F195 0%, #00D084 100%); color: #000; }
-        .content { padding: 2rem; }
-        .amount { font-size: 2.5rem; font-weight: bold; color: #333; margin: 1rem 0; text-align: center; }
-        .details { background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 1rem 0; }
-        .detail-row { display: flex; justify-content: space-between; margin: 0.5rem 0; align-items: center; }
-        .detail-row span:first-child { color: #666; }
-        .detail-row span:last-child { font-weight: 500; }
-        .qr-section { text-align: center; margin: 2rem 0; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; }
-        .qr-code { margin: 1rem 0; }
-        .pay-button { display: inline-block; background: #14F195; color: #000; padding: 1rem 2rem; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 1rem 0; transition: all 0.3s; }
-        .pay-button:hover { background: #00D084; transform: translateY(-2px); }
-        .status { padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: bold; display: inline-block; margin-top: 1rem; }
-        .status-pending { background: rgba(255,255,255,0.2); color: white; }
-        .status-confirmed { background: rgba(0,0,0,0.1); color: #000; }
-        .status-failed { background: #f8d7da; color: #721c24; }
-        .footer { text-align: center; padding: 1rem; color: #666; font-size: 0.9rem; border-top: 1px solid #eee; }
-        .loading { text-align: center; padding: 2rem; color: #666; }
-        .success-message { text-align: center; margin: 2rem 0; padding: 1.5rem; background: #d1edff; border-radius: 8px; color: #0c5460; }
-        .url-input { width: 100%; padding: 8px; font-size: 12px; border: 1px solid #ddd; border-radius: 4px; margin: 0.5rem 0; }
-        .copy-button { background: #6c757d; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
-        .copy-button:hover { background: #5a6268; }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #333;
+        }
+        .receipt-container {
+            max-width: 400px;
+            background: #fff;
+            border: 2px solid #000;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .header {
+            border-bottom: 2px dashed #000;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 0;
+            text-transform: uppercase;
+        }
+        .header p {
+            font-size: 12px;
+            margin: 5px 0;
+            color: #555;
+        }
+        .status {
+            font-size: 12px;
+            font-weight: bold;
+            padding: 8px 12px;
+            border: 1px solid #000;
+            border-radius: 4px;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .status-pending {
+            background: #f9f9f9;
+            color: #333;
+        }
+        .status-confirmed {
+            background: #000;
+            color: #fff;
+        }
+        .status-failed {
+            background: #f9f9f9;
+            color: #721c24;
+        }
+        .content {
+            padding: 10px 0;
+        }
+        .amount {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+        .details {
+            background: #f9f9f9;
+            padding: 15px;
+            border: 1px dashed #000;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            font-size: 12px;
+        }
+        .detail-row span:first-child {
+            color: #555;
+        }
+        .detail-row span:last-child {
+            font-weight: bold;
+        }
+        .qr-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #000;
+            border-radius: 4px;
+        }
+        .qr-section h3 {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        .qr-code {
+            display: flex;
+            justify-content: center;
+            margin: 15px 0;
+        }
+        .qr-code img {
+            width: 200px;
+            height: 200px;
+            border: 1px solid #000;
+        }
+        .url-input {
+            width: 100%;
+            padding: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            border: 1px solid #000;
+            border-radius: 4px;
+            margin: 10px 0;
+            background: #f9f9f9;
+        }
+        .copy-button {
+            background: #000;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+        .copy-button:hover {
+            background: #333;
+        }
+        .success-message {
+            background: #f9f9f9;
+            padding: 15px;
+            border: 1px dashed #000;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+        .success-message h3 {
+            font-size: 14px;
+            font-weight: bold;
+            margin: 0 0 10px 0;
+            text-transform: uppercase;
+        }
+        .success-message p {
+            font-size: 12px;
+            margin: 0;
+            color: #333;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 12px;
+            color: #555;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 10px;
+            color: #555;
+            border-top: 2px dashed #000;
+            padding-top: 10px;
+        }
+        @media (max-width: 480px) {
+            .receipt-container {
+                padding: 15px;
+            }
+            .header h1 {
+                font-size: 16px;
+            }
+            .amount {
+                font-size: 20px;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="receipt-container">
         <div class="header" id="header">
-            <h1>💳 PayMeBro Payment</h1>
+            <h1>PayMeBro Payment Receipt</h1>
+            <p>Secure Solana Payment</p>
+            <p>Generated on: September 09, 2025</p>
             <div class="status status-pending" id="status">Loading...</div>
         </div>
         
@@ -62,17 +211,17 @@
                     </div>
                     <div class="detail-row">
                         <span>Reference:</span>
-                        <span id="payment-reference" style="font-family: monospace; font-size: 0.8rem;"></span>
+                        <span id="payment-reference" style="font-family: 'Courier New', Courier, monospace; font-size: 10px;"></span>
                     </div>
                 </div>
 
                 <div id="qr-section" style="display: none;">
                     <div class="qr-section">
-                        <h3>📱 Scan to Pay with Solana Wallet</h3>
+                        <h3>Scan to Pay</h3>
                         <div id="qrcode" class="qr-code"></div>
-                        <p style="margin: 1rem 0; color: #666;">Scan with Phantom, Solflare, or any Solana wallet</p>
+                        <p style="font-size: 12px; color: #555;">Scan with Phantom, Solflare, or any Solana wallet</p>
                         
-                        <div id="payment-url" style="margin-top: 1rem;">
+                        <div style="margin-top: 10px;">
                             <input type="text" id="url-input" class="url-input" readonly>
                             <button onclick="copyUrl()" class="copy-button">Copy URL</button>
                         </div>
@@ -81,45 +230,65 @@
 
                 <div id="success-section" style="display: none;">
                     <div class="success-message">
-                        <h3 style="margin: 0 0 0.5rem 0;">✅ Payment Confirmed!</h3>
-                        <p style="margin: 0;">Your transaction has been successfully processed and confirmed on the blockchain.</p>
+                        <h3>Payment Confirmed</h3>
+                        <p>Transaction successfully processed and confirmed on the blockchain.</p>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="footer">
-            <p>Powered by PayMeBro • Secure Solana Payments</p>
+            <p>Powered by PayMeBro | Contact: support@paymebro.com</p>
         </div>
     </div>
 
     <script>
         const reference = window.location.pathname.split('/').pop();
         let paymentUrl = '';
+        let socket = null;
+        let authToken = null;
+
+        // Get Web3Auth user ID from URL parameters or localStorage
+        const urlParams = new URLSearchParams(window.location.search);
+        const web3AuthUserId = urlParams.get('userId') || localStorage.getItem('web3AuthUserId');
 
         // Initialize WebSocket connection
-        const socket = io();
-        
-        // Join payment room for real-time updates
-        socket.emit('join-payment', reference);
-        
-        // Listen for real-time payment updates
-        socket.on('payment-update', (data) => {
-            console.log('Real-time update received:', data);
-            if (data.status === 'confirmed') {
-                updateStatus('confirmed');
-                showSuccessMessage();
+        function initWebSocket() {
+            socket = io();
+            
+            if (web3AuthUserId) {
+                socket.emit('authenticate', web3AuthUserId, (response) => {
+                    if (response && response.success) {
+                        authToken = response.token;
+                        console.log('WebSocket authentication successful');
+                        
+                        socket.emit('join-payment', reference, authToken, (joinResponse) => {
+                            if (joinResponse && joinResponse.success) {
+                                console.log('Successfully joined payment room');
+                            } else {
+                                console.error('Failed to join payment room:', joinResponse ? joinResponse.error : 'Unknown error');
+                            }
+                        });
+                    } else {
+                        console.error('WebSocket authentication failed:', response ? response.error : 'Unknown error');
+                    }
+                });
+            } else {
+                socket.emit('join-payment', reference);
             }
-        });
+            
+            socket.on('payment-update', (data) => {
+                console.log('Real-time update received:', data);
+                if (data.status === 'confirmed') {
+                    updateStatus('confirmed');
+                    showSuccessMessage();
+                }
+            });
+        }
 
         function showSuccessMessage() {
             document.getElementById('success-section').style.display = 'block';
             document.getElementById('qr-section').style.display = 'none';
-            
-            // Show celebration animation
-            const header = document.getElementById('header');
-            header.style.background = 'linear-gradient(135deg, #14F195 0%, #00D084 100%)';
-            header.style.color = '#000';
         }
 
         async function loadPayment() {
@@ -141,7 +310,6 @@
                 
                 updateStatus(payment.status);
                 
-                // Generate QR code if pending
                 if (payment.status === 'pending') {
                     await generateQR();
                 } else if (payment.status === 'confirmed') {
@@ -158,40 +326,18 @@
 
         async function generateQR() {
             try {
-                const response = await fetch(`/api/payments/${reference}`);
+                const response = await fetch(`/api/payments/${reference}/qr`);
                 const data = await response.json();
                 
-                if (data.success && data.payment) {
-                    const payment = data.payment;
-                    let paymentUrl = `solana:${payment.recipient_address}?amount=${payment.amount}&reference=${payment.reference}`;
-                    
-                    // Add SPL token parameter if present
-                    if (payment.spl_token_mint) {
-                        paymentUrl += `&spl-token=${payment.spl_token_mint}`;
-                    }
-                    
-                    // Add label and message if present
-                    if (payment.label) {
-                        paymentUrl += `&label=${encodeURIComponent(payment.label)}`;
-                    }
-                    if (payment.message) {
-                        paymentUrl += `&message=${encodeURIComponent(payment.message)}`;
-                    }
-                    if (payment.memo) {
-                        paymentUrl += `&memo=${encodeURIComponent(payment.memo)}`;
-                    }
-                    
-                    // Generate QR code
-                    new QRCode(document.getElementById('qrcode'), {
-                        text: paymentUrl,
-                        width: 200,
-                        height: 200,
-                        colorDark: '#1f2937',
-                        colorLight: '#ffffff'
-                    });
-                    
-                    document.getElementById('url-input').value = paymentUrl;
+                if (data.success && data.qrCode) {
+                    document.getElementById('qrcode').innerHTML = '';
+                    const img = document.createElement('img');
+                    img.src = data.qrCode;
+                    document.getElementById('qrcode').appendChild(img);
+                    document.getElementById('url-input').value = data.qrCode; // Assuming qrCode is the URL for copying
                     document.getElementById('qr-section').style.display = 'block';
+                } else {
+                    console.error('Failed to generate QR code:', data.error);
                 }
             } catch (error) {
                 console.error('QR generation failed:', error);
@@ -200,19 +346,15 @@
 
         function updateStatus(status) {
             const statusEl = document.getElementById('status');
-            const headerEl = document.getElementById('header');
             
             statusEl.className = `status status-${status}`;
             
             if (status === 'confirmed') {
-                statusEl.textContent = '✅ Payment Confirmed';
-                headerEl.className = 'header confirmed';
-                document.getElementById('qr-section').style.display = 'none';
-                document.getElementById('success-section').style.display = 'block';
+                statusEl.textContent = 'Payment Confirmed';
             } else if (status === 'pending') {
-                statusEl.textContent = '⏳ Awaiting Payment';
+                statusEl.textContent = 'Awaiting Payment';
             } else if (status === 'failed') {
-                statusEl.textContent = '❌ Payment Failed';
+                statusEl.textContent = 'Payment Failed';
             }
         }
 
@@ -223,13 +365,12 @@
             
             const button = event.target;
             const originalText = button.textContent;
-            button.textContent = 'Copied!';
+            button.textContent = 'Copied';
             setTimeout(() => {
                 button.textContent = originalText;
             }, 2000);
         }
 
-        // Auto-refresh status every 5 seconds
         setInterval(async () => {
             try {
                 const response = await fetch(`/api/payments/${reference}/status`);
@@ -242,7 +383,7 @@
             }
         }, 5000);
 
-        // Load payment on page load
+        initWebSocket();
         loadPayment();
     </script>
 </body>

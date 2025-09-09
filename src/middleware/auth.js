@@ -42,7 +42,25 @@ const validateWeb3AuthUser = (req, res, next) => {
   next();
 };
 
+/**
+ * User authentication for protected endpoints
+ */
+const authenticateUser = (req, res, next) => {
+  const web3AuthUserId = req.headers['x-user-id'] || req.query.userId;
+  
+  if (!web3AuthUserId) {
+    return res.status(401).json({
+      success: false,
+      error: 'User authentication required'
+    });
+  }
+
+  req.user = { web3auth_user_id: web3AuthUserId };
+  next();
+};
+
 module.exports = {
   authenticateAdmin,
-  validateWeb3AuthUser
+  validateWeb3AuthUser,
+  authenticateUser
 };

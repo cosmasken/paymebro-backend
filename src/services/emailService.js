@@ -1,194 +1,197 @@
-const { Resend } = require('resend');
+const database = require('./database');
+const logger = require('../utils/logger');
+
+// Initialize Resend only if API key is available
+let resend = null;
+const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@afripay.com';
+
+if (process.env.RESEND_API_KEY) {
+  const { Resend } = require('resend');
+  resend = new Resend(process.env.RESEND_API_KEY);
+  logger.info('Resend email service initialized');
+} else {
+  logger.warn('RESEND_API_KEY not found - email service will queue only');
+}
 
 class EmailService {
-  constructor() {
-    this.resend = null;
-  }
-
-  getClient() {
-    if (!this.resend) {
-      if (!process.env.RESEND_API_KEY) {
-        throw new Error('RESEND_API_KEY environment variable is required');
-      }
-      this.resend = new Resend(process.env.RESEND_API_KEY);
-    }
-    return this.resend;
-  }
-
-  async sendPaymentCreatedEmail(payment, customerEmail) {
-    if (!customerEmail || !process.env.RESEND_API_KEY) return;
-
-    const emailHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Payment Request</title>
-    </head>
-    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f5f5f5;">
-        <div style="max-width: 600px; margin: 2rem auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; text-align: center;">
-                <h1 style="margin: 0; font-size: 1.8rem;">💳 Payment Request</h1>
-                <div style="background: rgba(255,255,255,0.2); padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: bold; margin-top: 1rem; display: inline-block;">
-                    Action Required
-                </div>
-            </div>
-            
-            <div style="padding: 2rem;">
-                <div style="font-size: 2.5rem; font-weight: bold; color: #333; margin: 1rem 0; text-align: center;">
-                    ${payment.amount} ${payment.currency || 'SOL'}
-                </div>
-                
-                <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 1rem 0;">
-                    <div style="display: flex; justify-content: space-between; margin: 0.5rem 0; align-items: center;">
-                        <span style="color: #666;">Description:</span>
-                        <span style="font-weight: 500;">${payment.message}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin: 0.5rem 0; align-items: center;">
-                        <span style="color: #666;">Label:</span>
-                        <span style="font-weight: 500;">${payment.label}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin: 0.5rem 0; align-items: center;">
-                        <span style="color: #666;">Network:</span>
-                        <span style="font-weight: 500; text-transform: capitalize;">${payment.chain}</span>
-                    </div>
-                </div>
-
-                <div style="text-align: center; margin: 2rem 0;">
-                    <a href="${payment.paymentUrl}" style="display: inline-block; background: #14F195; color: #000; padding: 1rem 2rem; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 1rem 0;">
-                        🚀 Pay Now
-                    </a>
-                    <p style="margin-top: 1rem; font-size: 0.9rem; color: #666;">
-                        Click to open payment page with QR code
-                    </p>
-                </div>
-            </div>
-
-            <div style="text-align: center; padding: 1rem; color: #666; font-size: 0.9rem; border-top: 1px solid #eee;">
-                <p style="margin: 0;">Powered by PayMeBro • Secure Solana Payments</p>
-            </div>
-        </div>
-    </body>
-    </html>`;
-
+  /**
+   * Queue an email notification
+   */
+  async queueEmail(web3AuthUserId, email, type, subject, body) {
     try {
-      const { data, error } = await this.getClient().emails.send({
-        from: process.env.FROM_EMAIL || 'payments@payments.paymebro.xyz',
-        to: [customerEmail],
-        subject: 'Payment Request - Action Required',
-        html: emailHtml
-      });
+      const { data, error } = await database.getClient()
+        .from('email_notifications')
+        .insert({
+          web3auth_user_id: web3AuthUserId,
+          email,
+          type,
+          subject,
+          body,
+          status: 'pending'
+        })
+        .select()
+        .single();
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      if (error) throw error;
 
+      logger.info('Email queued:', { id: data.id, type, email });
       return data;
     } catch (error) {
-      console.error('Email sending failed:', error);
+      logger.error('Failed to queue email:', error);
       throw error;
     }
   }
 
-  async sendPaymentConfirmedEmail(payment, customerEmail) {
-    if (!customerEmail || !process.env.RESEND_API_KEY) return;
-
-    const emailHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Payment Confirmed</title>
-    </head>
-    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f5f5f5;">
-        <div style="max-width: 600px; margin: 2rem auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #14F195 0%, #00D084 100%); color: #000; padding: 2rem; text-align: center;">
-                <h1 style="margin: 0; font-size: 1.8rem;">✅ Payment Confirmed</h1>
-                <div style="background: rgba(0,0,0,0.1); padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: bold; margin-top: 1rem; display: inline-block;">
-                    Successfully Processed
-                </div>
-            </div>
-            
-            <div style="padding: 2rem;">
-                <div style="font-size: 2.5rem; font-weight: bold; color: #333; margin: 1rem 0; text-align: center;">
-                    ${payment.amount} ${payment.currency || 'SOL'}
-                </div>
-                
-                <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; margin: 1rem 0;">
-                    <div style="display: flex; justify-content: space-between; margin: 0.5rem 0; align-items: center;">
-                        <span style="color: #666;">Description:</span>
-                        <span style="font-weight: 500;">${payment.message}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin: 0.5rem 0; align-items: center;">
-                        <span style="color: #666;">Transaction:</span>
-                        <span style="font-weight: 500; font-family: monospace; font-size: 0.8rem;">${payment.transaction_signature}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin: 0.5rem 0; align-items: center;">
-                        <span style="color: #666;">Network:</span>
-                        <span style="font-weight: 500; text-transform: capitalize;">${payment.chain}</span>
-                    </div>
-                </div>
-
-                <div style="text-align: center; margin: 2rem 0; padding: 1.5rem; background: #d1edff; border-radius: 8px;">
-                    <h3 style="margin: 0 0 0.5rem 0; color: #0c5460;">Thank you for your payment!</h3>
-                    <p style="margin: 0; color: #0c5460;">Your transaction has been successfully processed and confirmed on the blockchain.</p>
-                </div>
-            </div>
-
-            <div style="text-align: center; padding: 1rem; color: #666; font-size: 0.9rem; border-top: 1px solid #eee;">
-                <p style="margin: 0;">Powered by PayMeBro • Secure Solana Payments</p>
-            </div>
-        </div>
-    </body>
-    </html>`;
-
+  /**
+   * Send email using Resend
+   */
+  async sendEmail(to, subject, body, type = 'text') {
     try {
-      const { data, error } = await this.getClient().emails.send({
-        from: process.env.FROM_EMAIL || 'payments@payments.paymebro.xyz',
-        to: [customerEmail],
-        subject: 'Payment Confirmed - Thank You!',
-        html: emailHtml
-      });
-
-      if (error) {
-        throw new Error(error.message);
+      if (!resend) {
+        logger.warn('Resend not configured, skipping email send');
+        return { success: false, error: 'Email service not configured' };
       }
 
-      return data;
+      const emailData = {
+        from: FROM_EMAIL,
+        to: [to],
+        subject,
+        [type === 'html' ? 'html' : 'text']: body,
+      };
+
+      const { data, error } = await resend.emails.send(emailData);
+
+      if (error) {
+        logger.error('Resend email error:', error);
+        return { success: false, error: error.message };
+      }
+
+      logger.info('Email sent successfully:', { id: data.id, to, subject });
+      return { success: true, id: data.id };
     } catch (error) {
-      console.error('Email sending failed:', error);
-      throw error;
+      logger.error('Failed to send email:', error);
+      return { success: false, error: error.message };
     }
   }
 
-  async sendPaymentInvoice(payment, customerEmail, baseUrl) {
-    if (!customerEmail || !process.env.RESEND_API_KEY) return;
+  /**
+   * Send payment created email
+   */
+  async sendPaymentCreatedEmail(paymentData, customerEmail) {
+    const subject = `Payment Request - ${paymentData.amount} ${paymentData.currency}`;
+    const body = `
+      You have received a payment request.
+      
+      Amount: ${paymentData.amount} ${paymentData.currency}
+      Label: ${paymentData.label}
+      ${paymentData.message ? `Message: ${paymentData.message}` : ''}
+      
+      Pay here: ${paymentData.paymentUrl}
+      
+      Reference: ${paymentData.reference}
+    `;
 
-    const paymentUrl = `${baseUrl}/payment/${payment.reference}`;
-    
+    return this.queueEmail(paymentData.web3auth_user_id, customerEmail, 'payment_request', subject, body);
+  }
+
+  /**
+   * Send payment confirmation email
+   */
+  async sendPaymentConfirmation(web3AuthUserId, email, paymentData) {
+    const subject = `Payment Confirmed - ${paymentData.amount} ${paymentData.currency}`;
+    const body = `
+      Your payment has been confirmed!
+      
+      Amount: ${paymentData.amount} ${paymentData.currency}
+      Reference: ${paymentData.reference}
+      Label: ${paymentData.label}
+      
+      Thank you for your payment!
+    `;
+
+    return this.queueEmail(web3AuthUserId, email, 'payment_confirmation', subject, body);
+  }
+
+  /**
+   * Send subscription renewal reminder
+   */
+  async sendSubscriptionReminder(web3AuthUserId, email, subscriptionData) {
+    const subject = `Subscription Renewal Reminder - ${subscriptionData.planName}`;
+    const body = `
+      Your subscription "${subscriptionData.planName}" will renew soon.
+      
+      Amount: ${subscriptionData.amount} ${subscriptionData.currency}
+      Next Payment: ${subscriptionData.nextPaymentDate}
+      
+      Manage your subscription in your dashboard.
+    `;
+
+    return this.queueEmail(web3AuthUserId, email, 'subscription_reminder', subject, body);
+  }
+
+  /**
+   * Process pending emails using Resend
+   */
+  async processPendingEmails() {
     try {
-      const { data, error } = await this.getClient().emails.send({
-        from: process.env.FROM_EMAIL || 'payments@payments.paymebro.xyz',
-        to: [customerEmail],
-        subject: 'Payment Invoice',
-        html: `
-          <h2>Payment Invoice</h2>
-          <p><strong>Amount:</strong> ${payment.amount} ${payment.currency || 'SOL'}</p>
-          <p><strong>Message:</strong> ${payment.message}</p>
-          <p><strong>Label:</strong> ${payment.label}</p>
-          <p><a href="${paymentUrl}" style="background: #007cba; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Pay Now</a></p>
-        `
-      });
+      const { data: pendingEmails } = await database.getClient()
+        .from('email_notifications')
+        .select('*')
+        .eq('status', 'pending')
+        .limit(10);
 
-      if (error) {
-        throw new Error(error.message);
+      let processedCount = 0;
+
+      for (const email of pendingEmails || []) {
+        try {
+          // Send email using Resend
+          const result = await this.sendEmail(email.email, email.subject, email.body);
+
+          if (result.success) {
+            // Mark as sent
+            await database.getClient()
+              .from('email_notifications')
+              .update({
+                status: 'sent',
+                sent_at: new Date().toISOString()
+              })
+              .eq('id', email.id);
+
+            processedCount++;
+            logger.info('Email sent:', { id: email.id, type: email.type, to: email.email });
+          } else {
+            // Mark as failed
+            await database.getClient()
+              .from('email_notifications')
+              .update({
+                status: 'failed',
+                error_message: result.error
+              })
+              .eq('id', email.id);
+
+            logger.error('Email send failed:', { id: email.id, error: result.error });
+          }
+        } catch (error) {
+          // Mark as failed
+          await database.getClient()
+            .from('email_notifications')
+            .update({
+              status: 'failed',
+              error_message: error.message
+            })
+            .eq('id', email.id);
+
+          logger.error('Email processing failed:', { id: email.id, error: error.message });
+        }
       }
 
-      return data;
+      if (processedCount > 0) {
+        logger.info(`Email processing completed: ${processedCount}/${pendingEmails?.length || 0} emails sent`);
+      }
+
+      return processedCount;
     } catch (error) {
-      console.error('Email sending failed:', error);
+      logger.error('Failed to process pending emails:', error);
       throw error;
     }
   }

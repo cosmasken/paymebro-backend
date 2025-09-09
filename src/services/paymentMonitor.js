@@ -1,6 +1,5 @@
 const { findReference, validateTransfer, FindReferenceError } = require('@solana/pay');
-const { establishConnection } = require('../modules/solana-payment-merchant-flow/establishConnection');
-const { MERCHANT_WALLET } = require('../modules/solana-payment-merchant-flow/constants');
+const { MERCHANT_WALLET, establishConnection } = require('./solana');
 const { PublicKey } = require('@solana/web3.js');
 const BigNumber = require('bignumber.js');
 const database = require('./database');
@@ -54,19 +53,34 @@ class PaymentMonitor {
    */
   async checkPendingPayments() {
     try {
-      // Get all pending payments from database
-      const { data: pendingPayments } = await database.getClient()
+      const { data: pendingPayments, error } = await database.getClient()
         .from('payments')
-        .select('*')
-        .eq('status', 'pending');
+        .select('id, reference, amount, currency, spl_token_mint, web3auth_user_id, customer_email, chain, recipient_address')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: true })
+        .limit(50);
+
+      if (error) {
+        logger.error('Database error retrieving pending payments:', {
+          error: error.message,
+          code: error.code,
+          details: error.details
+        });
+        return;
+      }
 
       if (!pendingPayments || pendingPayments.length === 0) return;
+
+      logger.info('Processing pending payments:', { count: pendingPayments.length });
 
       for (const payment of pendingPayments) {
         await this.checkPaymentConfirmation(payment);
       }
     } catch (error) {
-      logger.error('Error checking pending payments:', error);
+      logger.error('Error checking pending payments:', {
+        error: error.message,
+        stack: error.stack
+      });
     }
   }
 
@@ -87,7 +101,7 @@ class PaymentMonitor {
 
       // Validate the transfer
       const validateParams = {
-        recipient: MERCHANT_WALLET,
+        recipient: new PublicKey(payment.recipient_address || MERCHANT_WALLET.toString()),
         amount: new BigNumber(payment.amount),
         reference: referencePublicKey
       };
@@ -114,11 +128,49 @@ class PaymentMonitor {
         return;
       }
       
-      // Log other errors
+      // Log validation errors but don't spam
       logger.warn('Payment validation error:', { 
         reference: payment.reference, 
-        error: error.message 
+        error: error.message
       });
+    }
+  }
+
+  /**
+   * Update payment analytics (consolidated from analyticsUpdater.js)
+   */
+  async updatePaymentAnalytics(paymentId) {
+    try {
+      const { data: analytics } = await database.getClient()
+        .from('payment_analytics')
+        .select('*')
+        .eq('payment_id', paymentId)
+        .single();
+
+      if (analytics) {
+        // Update existing analytics
+        await database.getClient()
+          .from('payment_analytics')
+          .update({
+            updated_at: new Date().toISOString()
+          })
+          .eq('payment_id', paymentId);
+      } else {
+        // Create new analytics record
+        await database.getClient()
+          .from('payment_analytics')
+          .insert({
+            payment_id: paymentId,
+            total_visits: 0,
+            total_scans: 0,
+            unique_visitors: 0,
+            conversion_rate: 0
+          });
+      }
+
+      logger.info('Payment analytics updated:', { paymentId });
+    } catch (error) {
+      logger.error('Payment analytics update failed:', { paymentId, error: error.message });
     }
   }
 
@@ -127,46 +179,82 @@ class PaymentMonitor {
    */
   async confirmPayment(payment, signature) {
     try {
-      // Update payment status
-      const updatedPayment = await database.updatePaymentStatus(
-        payment.reference, 
-        'confirmed', 
-        signature
-      );
+      // Update payment status with error handling
+      let updatedPayment;
+      try {
+        updatedPayment = await database.updatePaymentStatus(
+          payment.reference, 
+          'confirmed', 
+          signature
+        );
+      } catch (dbError) {
+        logger.error('Database error updating payment status in monitor:', {
+          reference: payment.reference,
+          status: 'confirmed',
+          error: dbError.message,
+          code: dbError.code
+        });
+        return;
+      }
 
       // Send webhook notification
-      await sendWebhook('payment.confirmed', {
-        reference: payment.reference,
-        amount: payment.amount,
-        currency: payment.currency,
-        signature,
-        timestamp: new Date().toISOString()
-      });
+      try {
+        await sendWebhook('payment.confirmed', {
+          reference: payment.reference,
+          amount: payment.amount,
+          currency: payment.currency,
+          signature,
+          timestamp: new Date().toISOString()
+        });
+      } catch (webhookError) {
+        logger.warn('Failed to send webhook notification:', {
+          reference: payment.reference,
+          error: webhookError.message
+        });
+      }
 
       // Send real-time WebSocket update
-      notifyPaymentUpdate(payment.reference, 'confirmed', {
+      const wsResult = notifyPaymentUpdate(payment.reference, 'confirmed', {
         amount: payment.amount,
         currency: payment.currency,
         signature
       });
+      
+      if (!wsResult.success) {
+        logger.warn('Failed to send WebSocket notification:', {
+          reference: payment.reference,
+          error: wsResult.error
+        });
+      }
 
       // Create transaction record
-      await database.getClient()
-        .from('transactions')
-        .insert({
-          payment_id: payment.id,
-          chain: payment.chain,
-          transaction_hash: signature,
-          status: 'confirmed',
-          confirmed_at: new Date().toISOString()
+      try {
+        await database.getClient()
+          .from('transactions')
+          .insert({
+            payment_id: payment.id,
+            chain: payment.chain,
+            transaction_hash: signature,
+            status: 'confirmed',
+            confirmed_at: new Date().toISOString()
+          });
+      } catch (txError) {
+        logger.warn('Failed to create transaction record:', {
+          reference: payment.reference,
+          error: txError.message
         });
+      }
 
       // Send confirmation email
       if (payment.customer_email) {
         try {
           await emailService.sendPaymentConfirmedEmail(updatedPayment, payment.customer_email);
         } catch (emailError) {
-          logger.warn('Failed to send confirmation email:', emailError);
+          logger.warn('Failed to send confirmation email:', {
+            reference: payment.reference,
+            email: payment.customer_email,
+            error: emailError.message
+          });
         }
       }
 
@@ -176,7 +264,11 @@ class PaymentMonitor {
       });
 
     } catch (error) {
-      logger.error('Error confirming payment:', error);
+      logger.error('Error confirming payment:', {
+        reference: payment.reference,
+        error: error.message,
+        stack: error.stack
+      });
     }
   }
 }
