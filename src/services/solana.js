@@ -215,11 +215,19 @@ async function createTransferWithAta(connection, sender, transferParams) {
           );
         }
         
-        // Add reference keys to the transfer instruction if provided
+        // IMPORTANT: For Solana Pay validation, references should be handled as separate instructions
+        // not by modifying the transfer instruction keys
         if (reference) {
           const references = Array.isArray(reference) ? reference : [reference];
+          // Add references as separate memo instructions (this is how Solana Pay handles references)
           for (const pubkey of references) {
-            transferInstruction.keys.push({ pubkey, isWritable: false, isSigner: false });
+            transaction.add(
+              new TransactionInstruction({
+                programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
+                keys: [],
+                data: Buffer.from(pubkey.toBase58(), 'utf8'),
+              })
+            );
           }
         }
         
@@ -288,12 +296,19 @@ async function createTransferWithAta(connection, sender, transferParams) {
         );
       }
       
-      // Add reference keys to the transfer instruction if provided
-      // This is how Solana Pay expects references to be handled
+      // IMPORTANT: For Solana Pay validation, references should be handled as separate instructions
+      // not by modifying the transfer instruction keys
       if (reference) {
         const references = Array.isArray(reference) ? reference : [reference];
+        // Add references as separate memo instructions (this is how Solana Pay handles references)
         for (const pubkey of references) {
-          transferInstruction.keys.push({ pubkey, isWritable: false, isSigner: false });
+          transaction.add(
+            new TransactionInstruction({
+              programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
+              keys: [],
+              data: Buffer.from(pubkey.toBase58(), 'utf8'),
+            })
+          );
         }
       }
       
