@@ -109,8 +109,57 @@ async function createTransferWithAta(connection, sender, transferParams) {
   
   // For SOL transfers, use the standard approach
   if (!splToken) {
-    const { createTransfer } = require('@solana/pay');
-    return await createTransfer(connection, sender, { recipient, amount, reference, memo });
+    // For SOL transfers to new accounts, we need to bypass the recipient validation
+    // because new wallets don't exist on-chain until they receive their first transaction
+    try {
+      const { createTransfer } = require('@solana/pay');
+      return await createTransfer(connection, sender, { recipient, amount, reference, memo });
+    } catch (error) {
+      // If it's a "recipient not found" error, we'll create a custom transfer
+      if (error.message && error.message.includes('recipient not found')) {
+        // Create a custom SOL transfer without recipient validation
+        const { LAMPORTS_PER_SOL, SystemProgram, Transaction, TransactionInstruction } = require('@solana/web3.js');
+        const BigNumber = require('bignumber.js');
+        
+        // Check sender has enough funds
+        const senderInfo = await connection.getAccountInfo(sender);
+        if (!senderInfo) throw new Error('sender not found');
+        
+        // Convert amount to lamports
+        const lamports = new BigNumber(amount).times(LAMPORTS_PER_SOL).integerValue().toNumber();
+        if (lamports > senderInfo.lamports) throw new Error('insufficient funds');
+        
+        // Create transaction
+        const transaction = new Transaction();
+        transaction.add(
+          SystemProgram.transfer({
+            fromPubkey: sender,
+            toPubkey: recipient,
+            lamports,
+          })
+        );
+        
+        // Add memo if provided
+        if (memo) {
+          const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+          transaction.add(
+            new TransactionInstruction({
+              programId: MEMO_PROGRAM_ID,
+              keys: [],
+              data: Buffer.from(memo, 'utf8'),
+            })
+          );
+        }
+        
+        // Set fee payer and blockhash
+        transaction.feePayer = sender;
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+        
+        return transaction;
+      }
+      throw error;
+    }
   }
   
   // For SPL token transfers, we need to handle the associated token account creation
@@ -160,7 +209,8 @@ async function createTransferWithAta(connection, sender, transferParams) {
       // Create transaction
       const transaction = new Transaction();
       
-      // Add instructions - transfer instruction must be last for Solana Pay validation
+      // IMPORTANT: For Solana Pay validation to work correctly, the transfer instruction 
+      // must be the LAST instruction, and the ATA creation must come BEFORE it
       transaction.add(createAtaInstruction);
       transaction.add(transferInstruction);
       
@@ -177,9 +227,9 @@ async function createTransferWithAta(connection, sender, transferParams) {
       }
       
       // Add reference keys to the transfer instruction if provided
+      // This is how Solana Pay expects references to be handled
       if (reference) {
         const references = Array.isArray(reference) ? reference : [reference];
-        // Add reference keys to the transfer instruction (not as separate instructions)
         for (const pubkey of references) {
           transferInstruction.keys.push({ pubkey, isWritable: false, isSigner: false });
         }

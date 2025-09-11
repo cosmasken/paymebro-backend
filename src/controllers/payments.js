@@ -802,12 +802,14 @@ const createTransaction = asyncHandler(async (req, res) => {
 
     // Provide more specific error messages for common issues
     let errorMessage = 'Failed to create transaction';
-    if (error.message.includes('insufficient funds')) {
+    if (error.message && error.message.includes('insufficient funds')) {
       errorMessage = 'Insufficient SOL balance for gas fees. Please ensure your wallet has at least 0.01 SOL for USDC transactions.';
-    } else if (error.message.includes('recipient not found')) {
-      errorMessage = 'Recipient wallet not found. Please ensure the recipient wallet is valid.';
-    } else if (error.message.includes('sender not found')) {
+    } else if (error.message && error.message.includes('recipient not found')) {
+      errorMessage = 'Recipient wallet not found. This can happen with new wallets that have never received a transaction. Please try sending a small SOL amount to the recipient wallet first.';
+    } else if (error.message && error.message.includes('sender not found')) {
       errorMessage = 'Sender wallet not found. Please ensure your wallet is connected and valid.';
+    } else if (error.message && error.message.includes('Failed to create transfer with ATA')) {
+      errorMessage = 'Failed to create USDC transfer. The payer may need SOL for gas fees or the recipient wallet may need to be initialized.';
     }
 
     res.status(500).json({
