@@ -186,7 +186,7 @@
         <div class="header" id="header">
             <h1>PayMeBro Payment Receipt</h1>
             <p>Secure Solana Payment</p>
-            <p>Generated on: September 09, 2025</p>
+            <p id="generated-date">Generated on: <span id="current-date"></span></p>
             <div class="status status-pending" id="status">Loading...</div>
         </div>
         
@@ -212,6 +212,9 @@
                     <div class="detail-row">
                         <span>Reference:</span>
                         <span id="payment-reference" style="font-family: 'Courier New', Courier, monospace; font-size: 10px;"></span>
+                    </div>
+                    <div class="detail-row" id="gas-fee-note" style="display: none; background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 8px; margin-top: 8px;">
+                        <span style="color: #856404;">⚠️ Payer needs SOL for gas fees</span>
                     </div>
                 </div>
 
@@ -243,6 +246,18 @@
     </div>
 
     <script>
+        // Set current date
+        const now = new Date();
+        const options = { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZoneName: 'short'
+        };
+        document.getElementById('current-date').textContent = now.toLocaleDateString('en-US', options);
+
         const reference = window.location.pathname.split('/').pop();
         let paymentUrl = '';
         let socket = null;
@@ -302,6 +317,11 @@
 
                 const payment = data.payment;
                 
+                // Show gas fee note for USDC payments
+                if (payment.currency === 'USDC') {
+                    document.getElementById('gas-fee-note').style.display = 'block';
+                }
+                
                 document.getElementById('payment-amount').textContent = `${payment.amount} ${payment.currency}`;
                 document.getElementById('payment-message').textContent = payment.message;
                 document.getElementById('payment-label').textContent = payment.label;
@@ -330,11 +350,17 @@
                 const data = await response.json();
                 
                 if (data.success && data.qrCode) {
+                    // Display QR code image
                     document.getElementById('qrcode').innerHTML = '';
                     const img = document.createElement('img');
                     img.src = data.qrCode;
                     document.getElementById('qrcode').appendChild(img);
-                    document.getElementById('url-input').value = data.qrCode; // Assuming qrCode is the URL for copying
+                    
+                    // Set the actual payment URL for copying (not the QR image data)
+                    const baseUrl = `${window.location.protocol}//${window.location.host}`;
+                    const paymentUrl = `${baseUrl}/api/transaction-requests/${reference}`;
+                    document.getElementById('url-input').value = paymentUrl;
+                    
                     document.getElementById('qr-section').style.display = 'block';
                 } else {
                     console.error('Failed to generate QR code:', data.error);

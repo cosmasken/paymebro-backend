@@ -193,6 +193,8 @@ async function createTransferWithAta(connection, sender, transferParams) {
       return transaction;
     }
   } catch (error) {
+    // Log the full error for debugging
+    console.error('Error in createTransferWithAta:', error);
     throw new Error(`Failed to create transfer with ATA: ${error.message}`);
   }
 }

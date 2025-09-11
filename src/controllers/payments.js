@@ -800,8 +800,18 @@ const createTransaction = asyncHandler(async (req, res) => {
       stack: error.stack
     });
 
+    // Provide more specific error messages for common issues
+    let errorMessage = 'Failed to create transaction';
+    if (error.message.includes('insufficient funds')) {
+      errorMessage = 'Insufficient SOL balance for gas fees. Please ensure your wallet has at least 0.01 SOL for USDC transactions.';
+    } else if (error.message.includes('recipient not found')) {
+      errorMessage = 'Recipient wallet not found. Please ensure the recipient wallet is valid.';
+    } else if (error.message.includes('sender not found')) {
+      errorMessage = 'Sender wallet not found. Please ensure your wallet is connected and valid.';
+    }
+
     res.status(500).json({
-      error: 'Failed to create transaction',
+      error: errorMessage,
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
