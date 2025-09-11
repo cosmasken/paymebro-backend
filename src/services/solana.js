@@ -107,37 +107,101 @@ async function ensureAssociatedTokenAccount(connection, payer, recipient, mint) 
 async function createTransferWithAta(connection, sender, transferParams) {
   const { recipient, amount, splToken, reference, memo } = transferParams;
   
-  // For SOL transfers, use the standard approach
+  // For SOL transfers, create a custom transaction that works with new wallets
   if (!splToken) {
-    // For SOL transfers to new accounts, we need to bypass the recipient validation
-    // because new wallets don't exist on-chain until they receive their first transaction
     try {
-      const { createTransfer } = require('@solana/pay');
-      return await createTransfer(connection, sender, { recipient, amount, reference, memo });
+      const { LAMPORTS_PER_SOL, SystemProgram, Transaction, TransactionInstruction } = require('@solana/web3.js');
+      const BigNumber = require('bignumber.js');
+      
+      // Check sender has enough funds
+      const senderInfo = await connection.getAccountInfo(sender);
+      if (!senderInfo) throw new Error('sender not found');
+      
+      // Convert amount to lamports
+      const lamports = new BigNumber(amount).times(LAMPORTS_PER_SOL).integerValue().toNumber();
+      if (lamports > senderInfo.lamports) throw new Error('insufficient funds');
+      
+      // Create transaction
+      const transaction = new Transaction();
+      transaction.add(
+        SystemProgram.transfer({
+          fromPubkey: sender,
+          toPubkey: recipient,
+          lamports,
+        })
+      );
+      
+      // Add memo if provided
+      if (memo) {
+        const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+        transaction.add(
+          new TransactionInstruction({
+            programId: MEMO_PROGRAM_ID,
+            keys: [],
+            data: Buffer.from(memo, 'utf8'),
+          })
+        );
+      }
+      
+      // Add reference keys if provided
+      if (reference) {
+        const references = Array.isArray(reference) ? reference : [reference];
+        // For SOL transfers, we add references as additional instructions
+        for (const pubkey of references) {
+          transaction.add(
+            new TransactionInstruction({
+              programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
+              keys: [{ pubkey: sender, isSigner: true, isWritable: false }],
+              data: Buffer.from(pubkey.toBase58(), 'utf8'),
+            })
+          );
+        }
+      }
+      
+      // Set fee payer and blockhash
+      transaction.feePayer = sender;
+      const { blockhash } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      
+      return transaction;
     } catch (error) {
-      // If it's a "recipient not found" error, we'll create a custom transfer
-      if (error.message && error.message.includes('recipient not found')) {
-        // Create a custom SOL transfer without recipient validation
-        const { LAMPORTS_PER_SOL, SystemProgram, Transaction, TransactionInstruction } = require('@solana/web3.js');
-        const BigNumber = require('bignumber.js');
+      console.error('Error in SOL transfer creation:', error);
+      throw new Error(`Failed to create SOL transfer: ${error.message}`);
+    }
+  }
+  
+  // For SPL token transfers, we need to handle the associated token account creation
+  try {
+    // Check if recipient has an associated token account
+    const hasAta = await hasAssociatedTokenAccount(connection, recipient, splToken);
+    
+    if (hasAta) {
+      // If recipient already has an ATA, create a custom transfer that works with new wallets
+      try {
+        // Create the transfer instruction using the SPL token library directly
+        const recipientAta = await getAssociatedTokenAddress(splToken, recipient);
+        const senderAta = await getAssociatedTokenAddress(splToken, sender);
         
-        // Check sender has enough funds
-        const senderInfo = await connection.getAccountInfo(sender);
-        if (!senderInfo) throw new Error('sender not found');
+        // Get mint info to determine decimals
+        const mintInfo = await getMintInfo(connection, splToken);
+        const decimals = mintInfo.decimals;
         
-        // Convert amount to lamports
-        const lamports = new BigNumber(amount).times(LAMPORTS_PER_SOL).integerValue().toNumber();
-        if (lamports > senderInfo.lamports) throw new Error('insufficient funds');
+        // Convert amount to integer tokens
+        const tokens = BigInt(amount.times(10 ** decimals).integerValue().toString());
+        
+        // Create transfer instruction
+        const transferInstruction = createTransferCheckedInstruction(
+          senderAta,
+          splToken,
+          recipientAta,
+          sender,
+          tokens,
+          decimals
+        );
         
         // Create transaction
         const transaction = new Transaction();
-        transaction.add(
-          SystemProgram.transfer({
-            fromPubkey: sender,
-            toPubkey: recipient,
-            lamports,
-          })
-        );
+        transaction.add(transferInstruction);
         
         // Add memo if provided
         if (memo) {
@@ -151,26 +215,24 @@ async function createTransferWithAta(connection, sender, transferParams) {
           );
         }
         
+        // Add reference keys to the transfer instruction if provided
+        if (reference) {
+          const references = Array.isArray(reference) ? reference : [reference];
+          for (const pubkey of references) {
+            transferInstruction.keys.push({ pubkey, isWritable: false, isSigner: false });
+          }
+        }
+        
         // Set fee payer and blockhash
         transaction.feePayer = sender;
         const { blockhash } = await connection.getLatestBlockhash();
         transaction.recentBlockhash = blockhash;
         
         return transaction;
+      } catch (error) {
+        console.error('Error in SPL token transfer creation:', error);
+        throw new Error(`Failed to create SPL token transfer: ${error.message}`);
       }
-      throw error;
-    }
-  }
-  
-  // For SPL token transfers, we need to handle the associated token account creation
-  try {
-    // Check if recipient has an associated token account
-    const hasAta = await hasAssociatedTokenAccount(connection, recipient, splToken);
-    
-    if (hasAta) {
-      // If recipient already has an ATA, use the standard Solana Pay approach
-      const { createTransfer } = require('@solana/pay');
-      return await createTransfer(connection, sender, { recipient, amount, splToken, reference, memo });
     } else {
       // If recipient doesn't have an ATA, we need to create a custom transaction
       // that includes both the ATA creation and the transfer
