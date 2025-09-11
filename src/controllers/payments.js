@@ -2,15 +2,14 @@ const { encodeURL, findReference, validateTransfer, TransactionRequestURLFields 
 const { MERCHANT_WALLET, USDC_MINT, establishConnection } = require('../services/solana');
 const BigNumber = require('bignumber.js');
 const { Keypair, PublicKey } = require('@solana/web3.js');
-const emailService = require('../services/emailService');
+const crypto = require('crypto');
+const notificationService = require('../services/notificationService');
 const database = require('../services/database');
 const logger = require('../utils/logger');
 const { asyncHandler } = require('../middleware/errorHandler');
 const QRCode = require('qrcode');
 const { notifyPaymentUpdate } = require('../services/websocket');
-const DeterministicAddressService = require('../services/deterministicAddressService');
-
-const deterministicService = new DeterministicAddressService();
+const addressService = require('../services/addressService');
 
 /**
  * Create a new payment request with deterministic reference
@@ -29,21 +28,21 @@ const createPayment = asyncHandler(async (req, res) => {
   }
 
   // Check if user can create more payments (plan enforcement)
-  const userPlan = await deterministicService.getUserPlan(web3AuthUserId);
-  const canCreate = await deterministicService.canUserCreatePayment(web3AuthUserId, userPlan);
-  
+  const userPlan = await addressService.getUserPlan(web3AuthUserId);
+  const canCreate = await addressService.canUserCreatePayment(web3AuthUserId, userPlan);
+
   if (!canCreate) {
-    const monthlyCount = await deterministicService.getMonthlyPaymentCount(web3AuthUserId);
+    const monthlyCount = await addressService.getMonthlyPaymentCount(web3AuthUserId);
     const planLimits = { free: 100, pro: 1000, enterprise: 'unlimited' };
     const limit = planLimits[userPlan] || planLimits.free;
-    
-    logger.warn('Payment creation failed: Monthly limit exceeded', { 
-      web3AuthUserId, 
-      plan: userPlan, 
-      monthlyCount, 
-      limit 
+
+    logger.warn('Payment creation failed: Monthly limit exceeded', {
+      web3AuthUserId,
+      plan: userPlan,
+      monthlyCount,
+      limit
     });
-    
+
     return res.status(403).json({
       success: false,
       error: `Monthly payment limit exceeded (${monthlyCount}/${limit}). Upgrade your plan for more payments.`,
@@ -55,13 +54,14 @@ const createPayment = asyncHandler(async (req, res) => {
     });
   }
 
-  // Generate deterministic reference address
-  const addressInfo = await deterministicService.generatePaymentAddress(web3AuthUserId);
+  // Generate unique payment reference and address
+  const paymentReference = crypto.randomBytes(16).toString('hex');
+  const addressInfo = await addressService.generatePaymentAddress(web3AuthUserId, paymentReference);
   const reference = new PublicKey(addressInfo.address);
 
-  logger.info('Generated deterministic address', {
+  logger.info('Generated unique payment address', {
     reference: addressInfo.address,
-    counter: addressInfo.counter,
+    paymentReference: paymentReference,
     userId: web3AuthUserId
   });
 
@@ -78,7 +78,7 @@ const createPayment = asyncHandler(async (req, res) => {
   // Calculate fees and determine currency
   let feeAmount;
   let currency = 'SOL';
-  
+
   if (tokenMint) {
     // Map common SPL token mints to their symbols
     const tokenMap = {
@@ -112,9 +112,9 @@ const createPayment = asyncHandler(async (req, res) => {
   const urlFields = { link: new URL(transactionRequestUrl) };
   const url = encodeURL(urlFields);
 
-  // Save payment to database with deterministic address info
+  // Save payment to database with unique address info
   const paymentData = {
-    reference: reference.toString(),
+    reference: addressInfo.address, // Use Solana address as reference
     web3auth_user_id: web3AuthUserId,
     amount: merchantAmount.toString(),
     fee_amount: feeAmount.toString(),
@@ -155,9 +155,10 @@ const createPayment = asyncHandler(async (req, res) => {
   if (customerEmail) {
     try {
       const baseUrl = `${req.protocol}://${req.get('host')}`;
-      await emailService.sendPaymentCreatedEmail({
+      await notificationService.sendInvoice({
         ...paymentData,
-        paymentUrl: `${baseUrl}/payment/${reference}`
+        paymentUrl: `${baseUrl}/payment/${reference}`,
+        reference
       }, customerEmail);
     } catch (emailError) {
       logger.warn('Failed to send payment created email:', {
@@ -176,7 +177,7 @@ const createPayment = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
-    reference: reference.toString(),
+    reference: addressInfo.address, // Use Solana address as reference
     url: url.toString(),
     paymentUrl: paymentUrl,
     payment
@@ -386,7 +387,7 @@ const confirmPayment = asyncHandler(async (req, res) => {
     // Send confirmation email
     if (payment.customer_email) {
       try {
-        await emailService.sendPaymentConfirmedEmail(updatedPayment, payment.customer_email);
+        await notificationService.sendPaymentConfirmation(updatedPayment, payment.customer_email);
       } catch (emailError) {
         logger.warn('Failed to send payment confirmed email:', {
           reference,
@@ -537,7 +538,10 @@ const sendInvoice = asyncHandler(async (req, res) => {
   // const baseUrl = `${req.protocol}://${req.get('host')}`;
 
   try {
-    await emailService.sendPaymentInvoice(payment, email, baseUrl);
+    await notificationService.sendInvoice({
+      ...payment,
+      paymentUrl: `${baseUrl}/payment/${reference}`
+    }, email);
   } catch (emailError) {
     logger.error('Failed to send payment invoice:', {
       reference,
@@ -651,7 +655,7 @@ const manualConfirmPayment = asyncHandler(async (req, res) => {
   // Send confirmation email
   if (payment.customer_email) {
     try {
-      await emailService.sendPaymentConfirmedEmail(updatedPayment, payment.customer_email);
+      await notificationService.sendPaymentConfirmation(updatedPayment, payment.customer_email);
       logger.info('Payment confirmation email sent (manual):', { reference, email: payment.customer_email });
     } catch (emailError) {
       logger.warn('Failed to send payment confirmed email (manual):', {
@@ -689,8 +693,7 @@ const manualConfirmPayment = asyncHandler(async (req, res) => {
  */
 const getTransactionRequest = asyncHandler(async (req, res) => {
   const { reference } = req.params;
-  
-  // Validate reference exists in database
+
   const session = await database.getPayment(reference);
   if (!session) {
     return res.status(404).json({
@@ -698,9 +701,15 @@ const getTransactionRequest = asyncHandler(async (req, res) => {
     });
   }
 
-  // Return merchant info for wallet display
+  if (session.status !== 'pending') {
+    return res.status(400).json({
+      error: 'Transaction request already processed'
+    });
+  }
+
+  // Official Solana Pay GET response format
   const response = {
-    label: process.env.MERCHANT_NAME || 'PayMeBro',
+    label: session.label || 'PayMeBro Payment',
     icon: process.env.MERCHANT_ICON || 'https://raw.githubusercontent.com/vybzcody/paymebro/main/public/afripay.png'
   };
 
@@ -709,7 +718,7 @@ const getTransactionRequest = asyncHandler(async (req, res) => {
 });
 
 /**
- * Handle POST request to create transaction (consolidated from transactionRequests)
+ * Handle POST request to create transaction (using official @solana/pay)
  */
 const createTransaction = asyncHandler(async (req, res) => {
   const { reference } = req.params;
@@ -721,7 +730,6 @@ const createTransaction = asyncHandler(async (req, res) => {
     });
   }
 
-  // Get session details
   const session = await database.getPayment(reference);
   if (!session) {
     return res.status(404).json({
@@ -736,125 +744,69 @@ const createTransaction = asyncHandler(async (req, res) => {
   }
 
   try {
-    const { Connection, PublicKey, VersionedTransaction, TransactionMessage, SystemProgram } = require('@solana/web3.js');
-    const { createTransferCheckedInstruction, getAccount, getAssociatedTokenAddress, getMint } = require('@solana/spl-token');
-    const { MERCHANT_WALLET } = require('../services/solana');
-    
+    const { Connection, PublicKey, Transaction } = require('@solana/web3.js');
+    const { MERCHANT_WALLET, establishConnection, createTransferWithAta } = require('../services/solana');
+
     const sender = new PublicKey(account);
     const connection = await establishConnection();
-    
-    let transaction;
-    let message = `Payment of ${session.amount} ${session.currency}`;
 
-    if (session.spl_token_mint) {
-      // Create SPL token transaction
-      const splToken = new PublicKey(session.spl_token_mint);
-      const amount = new BigNumber(session.amount);
+    const recipient = new PublicKey(session.recipient_address || MERCHANT_WALLET.toString());
+    const amount = new BigNumber(session.amount);
+    const referenceKey = new PublicKey(session.reference);
+    const splToken = session.spl_token_mint ? new PublicKey(session.spl_token_mint) : undefined;
 
-      // Get mint info
-      const mint = await getMint(connection, splToken);
-      if (!mint.isInitialized) throw new Error('Token mint not initialized');
+    // Use our custom function that handles associated token accounts
+    let transaction = await createTransferWithAta(connection, sender, {
+      recipient,
+      amount,
+      splToken,
+      reference: referenceKey,
+      memo: `Payment: ${session.amount} ${session.currency}`
+    });
 
-      // Calculate amount with decimals
-      const tokens = amount.times(new BigNumber(10).pow(mint.decimals)).integerValue(BigNumber.ROUND_FLOOR);
+    // Serialize and deserialize to ensure consistent ordering (from official example)
+    transaction = Transaction.from(
+      transaction.serialize({
+        verifySignatures: false,
+        requireAllSignatures: false,
+      })
+    );
 
-      // Get sender's token account
-      const senderATA = await getAssociatedTokenAddress(splToken, sender);
-      
-      try {
-        const senderAccount = await getAccount(connection, senderATA);
-        if (!senderAccount.isInitialized) throw new Error('Sender token account not found');
-        if (senderAccount.isFrozen) throw new Error('Sender token account is frozen');
-        if (BigInt(tokens.toString()) > senderAccount.amount) throw new Error('Insufficient token balance');
-      } catch (error) {
-        if (error.name === 'TokenAccountNotFoundError') {
-          throw new Error('Sender does not have a USDC token account');
-        }
-        throw error;
-      }
+    // Serialize the unsigned transaction
+    const serialized = transaction.serialize({
+      verifySignatures: false,
+      requireAllSignatures: false,
+    });
+    const base64Transaction = serialized.toString('base64');
 
-      // Get merchant's token account
-      const merchantWallet = new PublicKey(session.recipient_address || MERCHANT_WALLET.toString());
-      const merchantATA = await getAssociatedTokenAddress(splToken, merchantWallet);
-      
-      // Create transfer instruction
-      const transferIx = createTransferCheckedInstruction(
-        senderATA,
-        splToken,
-        merchantATA,
-        sender,
-        BigInt(tokens.toString()),
-        mint.decimals
-      );
-
-      // Add reference
-      const reference = new PublicKey(session.reference);
-      transferIx.keys.push({ pubkey: reference, isWritable: false, isSigner: false });
-
-      // Get recent blockhash
-      const { blockhash } = await connection.getLatestBlockhash();
-
-      // Create transaction
-      transaction = new VersionedTransaction(
-        new TransactionMessage({
-          payerKey: sender,
-          recentBlockhash: blockhash,
-          instructions: [transferIx]
-        }).compileToV0Message()
-      );
-
-      message = `Payment of ${session.amount} ${session.currency} tokens`;
-    } else {
-      // Create SOL transaction
-      const amount = new BigNumber(session.amount);
-      const lamports = amount.times(1e9).integerValue(BigNumber.ROUND_FLOOR);
-
-      // Check sender balance
-      const balance = await connection.getBalance(sender);
-      if (BigInt(lamports.toString()) > balance) throw new Error('Insufficient SOL balance');
-
-      // Create transfer instruction
-      const merchantWallet = new PublicKey(session.recipient_address || MERCHANT_WALLET.toString());
-      const transferIx = SystemProgram.transfer({
-        fromPubkey: sender,
-        toPubkey: merchantWallet,
-        lamports: BigInt(lamports.toString())
-      });
-
-      // Add reference
-      const reference = new PublicKey(session.reference);
-      transferIx.keys.push({ pubkey: reference, isWritable: false, isSigner: false });
-
-      // Get recent blockhash
-      const { blockhash } = await connection.getLatestBlockhash();
-
-      // Create transaction
-      transaction = new VersionedTransaction(
-        new TransactionMessage({
-          payerKey: sender,
-          recentBlockhash: blockhash,
-          instructions: [transferIx]
-        }).compileToV0Message()
-      );
-    }
-
-    const serializedTransaction = transaction.serialize();
-    const base64Transaction = Buffer.from(serializedTransaction).toString('base64');
-
-    logger.info('Transaction created:', { reference, account, type: session.spl_token_mint ? 'SPL' : 'SOL' });
+    logger.info('Transaction created:', { 
+      reference, 
+      account, 
+      type: splToken ? 'SPL' : 'SOL',
+      recipient: recipient.toString(),
+      splToken: splToken?.toString()
+    });
 
     res.json({
       transaction: base64Transaction,
-      message
+      message: session.message || `Payment of ${session.amount} ${session.currency}`
     });
 
   } catch (error) {
-    logger.error('Transaction creation failed:', { reference, error: error.message });
-    res.status(400).json({
-      error: error.message
+    logger.error('Transaction creation failed:', {
+      reference,
+      account,
+      error: error.message,
+      stack: error.stack
+    });
+
+    res.status(500).json({
+      error: 'Failed to create transaction',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
+
 
 module.exports = {
   createPayment,
