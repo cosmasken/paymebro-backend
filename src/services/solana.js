@@ -245,6 +245,13 @@ async function createTransferWithAta(connection, sender, transferParams) {
   } catch (error) {
     // Log the full error for debugging
     console.error('Error in createTransferWithAta:', error);
+    
+    // If it's a "recipient not found" error, it might be from the Solana Pay library
+    // trying to validate the recipient account exists
+    if (error.message && error.message.includes('recipient not found')) {
+      throw new Error('Recipient wallet not found. This can happen with new wallets that have never received a transaction. Please try sending a small SOL amount to the recipient wallet first.');
+    }
+    
     throw new Error(`Failed to create transfer with ATA: ${error.message}`);
   }
 }
