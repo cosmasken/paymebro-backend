@@ -2,10 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { asyncHandler } = require('../middleware/errorHandler');
 const database = require('../services/database');
-const DeterministicAddressService = require('../services/deterministicAddressService');
+const userService = require('../services/userService');
 const logger = require('../utils/logger');
-
-const deterministicService = new DeterministicAddressService();
 
 /**
  * GET /api/plans/usage
@@ -13,7 +11,7 @@ const deterministicService = new DeterministicAddressService();
  */
 router.get('/usage', asyncHandler(async (req, res) => {
   const userId = req.headers['x-user-id'];
-  
+
   if (!userId) {
     return res.status(400).json({
       success: false,
@@ -22,25 +20,17 @@ router.get('/usage', asyncHandler(async (req, res) => {
   }
 
   try {
-    const userPlan = await deterministicService.getUserPlan(userId);
-    const monthlyCount = await deterministicService.getMonthlyPaymentCount(userId);
-    
-    const planLimits = {
-      free: 100,
-      pro: 1000,
-      enterprise: Infinity
-    };
-    
-    const monthlyLimit = planLimits[userPlan] || planLimits.free;
-    
+    const userStats = await userService.getUserStats(userId);
+
     res.json({
       success: true,
       usage: {
-        currentPlan: userPlan,
-        monthlyUsage: monthlyCount,
-        monthlyLimit: monthlyLimit === Infinity ? 'unlimited' : monthlyLimit,
-        percentage: monthlyLimit === Infinity ? 0 : Math.min((monthlyCount / monthlyLimit) * 100, 100),
-        canCreatePayment: monthlyCount < monthlyLimit
+        currentPlan: userStats.plan,
+        monthlyUsage: userStats.monthlyPayments,
+        monthlyLimit: userStats.monthlyLimit === Infinity ? 'unlimited' : userStats.monthlyLimit,
+        percentage: userStats.monthlyLimit === Infinity ? 0 : Math.min((userStats.monthlyPayments / userStats.monthlyLimit) * 100, 100),
+        canCreatePayment: userStats.canCreatePayment,
+        remaining: userStats.remainingPayments === Infinity ? 'unlimited' : userStats.remainingPayments
       }
     });
 
@@ -64,7 +54,7 @@ router.get('/usage', asyncHandler(async (req, res) => {
 router.post('/upgrade', asyncHandler(async (req, res) => {
   const userId = req.headers['x-user-id'];
   const { planType } = req.body;
-  
+
   if (!userId) {
     return res.status(400).json({
       success: false,
@@ -80,7 +70,7 @@ router.post('/upgrade', asyncHandler(async (req, res) => {
   }
 
   const client = await database.getClient().connect();
-  
+
   try {
     await client.query(
       'UPDATE users SET plan_type = $1, updated_at = CURRENT_TIMESTAMP WHERE web3auth_user_id = $2',

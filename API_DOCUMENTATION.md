@@ -5,15 +5,35 @@
 http://localhost:3000/api
 ```
 
+## 🏗️ Architecture Overview
+
+PayMeBro implements a **dual-layer API architecture** that separates business logic from protocol implementation:
+
+### **Business Layer** (`/api/payments`, `/api/users`, `/api/analytics`, etc.)
+- User authentication and authorization
+- Plan enforcement and billing
+- Analytics and reporting
+- Email notifications
+- Template management
+
+### **Protocol Layer** (`/api/transaction-requests`)
+- Official Solana Pay specification compliance
+- Wallet compatibility (Phantom, Solflare, etc.)
+- Blockchain transaction creation
+- No authentication required (public endpoints)
+
+This separation ensures **standards compliance** while maintaining **business flexibility**.
+
 ## Authentication
 - Most endpoints require `x-user-id` header with Web3Auth user ID
 - Some endpoints use `authenticateUser` middleware for enhanced security
+- Transaction request endpoints are public (Solana Pay standard)
 
 ---
 
 ## 🔥 Payments API (`/api/payments`)
 
-### Create Payment (BIP-39 Deterministic Addresses)
+### Create Payment
 ```http
 POST /api/payments/create
 Content-Type: application/json
@@ -23,27 +43,35 @@ x-user-id: <web3auth_user_id>
   "amount": 1.0,
   "label": "Coffee Purchase",
   "message": "Thank you!",
+  "memo": "Payment memo",
   "customerEmail": "customer@example.com",
   "web3AuthUserId": "<web3auth_user_id>",
   "chain": "solana",
-  "splToken": "Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr"
+  "splToken": "Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr",
+  "merchantWallet": "<optional_custom_merchant_address>"
 }
 ```
 
-**New Features:**
-- **Deterministic References**: Uses BIP-39 hierarchical deterministic addresses
-- **User Tracking**: Each user gets unique payment counter and address sequence
-- **Plan Enforcement**: Automatic payment limit checking (default: 100 payments)
-- **Derivation Path**: `m/44'/501'/2024'/userId/0/paymentIndex`
+**Features:**
+- **Plan Enforcement**: Automatic payment limit checking based on user plan
+- **Address Generation**: Unique Solana addresses for each payment
+- **Fee Calculation**: Automatic fee calculation (2.9% + fixed fee)
+- **Email Notifications**: Optional customer email notifications
 
-**Response includes:**
+**Response:**
 ```json
 {
   "success": true,
-  "reference": "DeterministicSolanaAddress...",
+  "reference": "SolanaAddress123...",
+  "url": "solana:http://localhost:3000/api/transaction-requests/SolanaAddress123...",
+  "paymentUrl": "http://localhost:3000/payment/SolanaAddress123...",
   "payment": {
-    "counter": 5,
-    "derivationPath": "m/44'/501'/2024'/user123/0/5"
+    "id": "uuid",
+    "amount": "1.0",
+    "fee_amount": "0.032",
+    "total_amount_paid": "1.032",
+    "currency": "SOL",
+    "status": "pending"
   }
 }
 ```
@@ -63,28 +91,23 @@ GET /api/payments/{reference}/status
 GET /api/payments/{reference}/qr
 ```
 
-### Transaction Request (Solana Pay)
-```http
-GET /api/payments/{reference}/transaction-request
-POST /api/payments/{reference}/transaction-request
-Content-Type: application/json
-
+**Response:**
+```json
 {
-  "account": "<wallet_public_key>"
+  "success": true,
+  "qrCode": "data:image/png;base64,..."
 }
 ```
 
 ### Send Invoice Email
 ```http
 POST /api/payments/{reference}/invoice
-```
+Content-Type: application/json
 
-### Manual Confirm Payment (Testing)
-```http
-POST /api/payments/{reference}/confirm
+{
+  "email": "customer@example.com"
+}
 ```
-
-**Note**: This endpoint manually confirms a payment without requiring a transaction signature. Used for testing purposes only.
 
 ### Confirm Payment
 ```http
@@ -97,36 +120,50 @@ Content-Type: application/json
 }
 ```
 
-**Automatic Payment Processing**: The system runs automatic payment monitoring every 15 seconds that:
-- Checks all pending payments for on-chain confirmation
-- Uses Solana Pay's `findReference` to detect transactions
-- Validates transfer amounts and recipients
-- Automatically updates payment status to "confirmed" when detected
-- Sends webhooks, emails, and WebSocket notifications
+**Purpose**: Confirms a payment with blockchain transaction verification.
 
-Payments can also be manually confirmed via the endpoints above.
+### Manual Confirm Payment (Development Only)
+```http
+POST /api/payments/{reference}/confirm
+Content-Type: application/json
+
+{
+  "signature": "<optional_signature>"
+}
+```
+
+**Availability**: Only available when `NODE_ENV !== 'production'`
 
 ---
 
-## 📊 Analytics API (`/api/analytics`) - Enhanced with User Tracking
+## 📊 Analytics API (`/api/analytics`)
 
-### Get Basic Metrics (User-Specific)
+### Get Basic Metrics
 ```http
 GET /api/analytics
 x-user-id: <web3auth_user_id>
 ```
 
-**Enhanced Response:**
+**Response:**
 ```json
 {
   "success": true,
-  "analytics": {
-    "totalPayments": 42,
-    "paymentCounter": 42,
+  "metrics": {
+    "totalPayments": 5,
+    "confirmedPayments": 3,
+    "pendingPayments": 2,
+    "totalRevenue": 15.50,
+    "conversionRate": "60.00",
     "planUsage": {
-      "current": 42,
-      "limit": 100,
-      "percentage": 42
+      "current": 5,
+      "limit": 10,
+      "percentage": 50
+    },
+    "planInfo": {
+      "currentPlan": "free",
+      "monthlyUsage": 5,
+      "monthlyLimit": 10,
+      "remaining": 5
     }
   }
 }
@@ -135,30 +172,6 @@ x-user-id: <web3auth_user_id>
 ### Get Payment History
 ```http
 GET /api/analytics/history?page=1&limit=10
-x-user-id: <web3auth_user_id>
-```
-
-### Get User's Deterministic Addresses
-```http
-GET /api/analytics/addresses?start=0&end=10
-x-user-id: <web3auth_user_id>
-```
-
-**New Endpoint**: Returns user's deterministic address range for transaction history optimization.
-
-**Response:**
-```json
-{
-  "success": true,
-  "addresses": [
-    {
-      "address": "SolanaAddress1...",
-      "counter": 1,
-      "derivationPath": "m/44'/501'/2024'/user123/0/1"
-    }
-  ],
-  "count": 10
-}
 ```
 
 ### Get Merchant Overview
@@ -181,6 +194,80 @@ Authorization: Bearer <token>
 
 ---
 
+## 📋 Plans API (`/api/plans`)
+
+### Get Plan Usage
+```http
+GET /api/plans/usage
+x-user-id: <web3auth_user_id>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "usage": {
+    "currentPlan": "free",
+    "monthlyUsage": 5,
+    "monthlyLimit": 10,
+    "percentage": 50,
+    "canCreatePayment": true,
+    "remaining": 5
+  }
+}
+```
+
+### Get Plan Information
+```http
+GET /api/plans/info
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "plans": {
+    "free": {
+      "name": "Free",
+      "monthlyLimit": 10,
+      "price": 0,
+      "features": ["10 payments/month", "Basic analytics", "Email support"]
+    },
+    "basic": {
+      "name": "Basic",
+      "monthlyLimit": 100,
+      "price": 29,
+      "features": ["100 payments/month", "Advanced analytics", "Priority support"]
+    },
+    "premium": {
+      "name": "Premium",
+      "monthlyLimit": 1000,
+      "price": 99,
+      "features": ["1,000 payments/month", "Custom branding", "API access"]
+    },
+    "enterprise": {
+      "name": "Enterprise",
+      "monthlyLimit": "unlimited",
+      "price": "custom",
+      "features": ["Unlimited payments", "Custom integrations", "Dedicated support"]
+    }
+  }
+}
+```
+
+### Upgrade Plan
+```http
+POST /api/plans/upgrade
+Content-Type: application/json
+x-user-id: <web3auth_user_id>
+
+{
+  "planType": "basic"
+}
+```
+
+---
+
 ## 👤 Users API (`/api/users`)
 
 ### Register User
@@ -196,12 +283,9 @@ Content-Type: application/json
 }
 ```
 
-**New**: Automatically initializes user payment tracking with BIP-39 master seed.
-
 ### Get User Profile
 ```http
 GET /api/users/profile/{web3AuthUserId}
-GET /api/users/{userId}  # Alias
 ```
 
 ### Complete Onboarding
@@ -352,6 +436,22 @@ GET /api/emails/pending
 x-user-id: <web3auth_user_id>
 ```
 
+**Response:**
+```json
+{
+  "success": true,
+  "emails": [
+    {
+      "id": "uuid",
+      "type": "payment_created",
+      "status": "pending",
+      "recipient_email": "customer@example.com",
+      "created_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
 ### Process Email Queue
 ```http
 POST /api/emails/process
@@ -370,47 +470,254 @@ Content-Type: application/json
 
 ---
 
-## 🔐 BIP-39 Deterministic Address System
+## 📢 Notifications API (`/api/notifications`)
 
-### Key Features
-- **Hierarchical Deterministic**: Uses BIP-39 standard for address generation
-- **User Isolation**: Each user has unique address space
+### Get User Notifications
+```http
+GET /api/notifications/user/{userId}
+```
+
+### Process Pending Notifications
+```http
+POST /api/notifications/process
+```
+
+### Send Payment Reminder
+```http
+POST /api/notifications/send-reminder
+Content-Type: application/json
+
+{
+  "paymentReference": "<payment_reference>",
+  "customerEmail": "customer@example.com"
+}
+```
+
+---
+
+## 🔄 Transaction Requests API (`/api/transaction-requests`)
+
+> **Important**: This API implements the official **Solana Pay Protocol** specification and is separate from the Payments API for good architectural reasons.
+
+### Get Transaction Request (Solana Pay)
+```http
+GET /api/transaction-requests/{reference}
+```
+
+**Purpose**: Returns Solana Pay metadata for wallet applications
+**Used by**: Wallet apps to display payment information before transaction creation
+
+**Response:**
+```json
+{
+  "label": "PayMeBro Payment",
+  "icon": "https://example.com/icon.png"
+}
+```
+
+### Create Transaction (Solana Pay)
+```http
+POST /api/transaction-requests/{reference}
+Content-Type: application/json
+
+{
+  "account": "<wallet_public_key>"
+}
+```
+
+**Purpose**: Creates the actual blockchain transaction for wallet signing
+**Used by**: Wallet apps to get the serialized transaction
+
+**Response:**
+```json
+{
+  "transaction": "<base64_encoded_transaction>",
+  "message": "Payment of 1.0 SOL"
+}
+```
+
+---
+
+## 🔄 Payments vs Transaction-Requests: Architecture Explanation
+
+### **Why Two Separate APIs?**
+
+#### **`/api/payments` - Business Logic Layer**
+- **Purpose**: High-level payment lifecycle management
+- **Authentication**: Requires user authentication (`x-user-id`)
+- **Features**: Plan enforcement, analytics, notifications, QR codes
+- **Rate Limiting**: Business-focused limits (10 payments/min)
+- **Audience**: Your application frontend
+
+#### **`/api/transaction-requests` - Protocol Layer**
+- **Purpose**: Official Solana Pay protocol implementation
+- **Authentication**: No user auth required (public endpoints)
+- **Features**: Wallet compatibility, transaction creation
+- **Rate Limiting**: Protocol-focused limits (30 requests/min)
+- **Audience**: Solana wallets (Phantom, Solflare, etc.)
+
+### **Complete Payment Flow**
+
+```mermaid
+sequenceDiagram
+    participant User as User/Frontend
+    participant API as PayMeBro API
+    participant Wallet as Solana Wallet
+    participant Blockchain as Solana Blockchain
+
+    Note over User,Blockchain: 1. Payment Creation
+    User->>API: POST /api/payments/create
+    API->>API: Check plan limits
+    API->>API: Generate unique address
+    API-->>User: Payment created + QR code URL
+
+    Note over User,Blockchain: 2. QR Code Generation
+    User->>API: GET /api/payments/{ref}/qr
+    API-->>User: QR code image (data:image/png)
+
+    Note over User,Blockchain: 3. Wallet Interaction (Solana Pay)
+    Wallet->>API: GET /api/transaction-requests/{ref}
+    API-->>Wallet: Payment metadata (label, icon)
+    
+    Wallet->>API: POST /api/transaction-requests/{ref}
+    Note right of API: Creates blockchain transaction
+    API-->>Wallet: Serialized transaction
+
+    Note over User,Blockchain: 4. Transaction Signing & Broadcast
+    Wallet->>Wallet: User signs transaction
+    Wallet->>Blockchain: Broadcast signed transaction
+    Blockchain-->>Wallet: Transaction signature
+
+    Note over User,Blockchain: 5. Payment Confirmation
+    User->>API: POST /api/payments/confirm
+    API->>Blockchain: Verify transaction
+    API->>API: Update payment status
+    API-->>User: Payment confirmed
+```
+
+### **Step-by-Step Flow**
+
+1. **Payment Creation** (`/api/payments`)
+   ```http
+   POST /api/payments/create
+   → Creates payment record
+   → Enforces plan limits
+   → Generates unique Solana address
+   → Returns payment URL and QR code
+   ```
+
+2. **QR Code Display** (`/api/payments`)
+   ```http
+   GET /api/payments/{reference}/qr
+   → Generates QR code image
+   → Contains Solana Pay URL pointing to transaction-requests
+   ```
+
+3. **Wallet Metadata Request** (`/api/transaction-requests`)
+   ```http
+   GET /api/transaction-requests/{reference}
+   → Wallet scans QR code
+   → Requests payment metadata (Solana Pay standard)
+   → Returns label and icon for display
+   ```
+
+4. **Transaction Creation** (`/api/transaction-requests`)
+   ```http
+   POST /api/transaction-requests/{reference}
+   → Wallet requests transaction
+   → Creates serialized Solana transaction
+   → Handles SPL tokens, fees, memos
+   → Returns transaction for wallet signing
+   ```
+
+5. **Payment Confirmation** (`/api/payments`)
+   ```http
+   POST /api/payments/confirm
+   → Verifies blockchain transaction
+   → Updates payment status
+   → Sends notifications
+   → Updates analytics
+   ```
+
+### **Key Benefits of This Architecture**
+
+✅ **Standards Compliance**: Full Solana Pay compatibility
+✅ **Wallet Support**: Works with all Solana wallets
+✅ **Business Logic Separation**: Clean separation of concerns
+✅ **Security**: Different auth/rate limiting per use case
+✅ **Flexibility**: Can modify business logic without breaking protocol
+✅ **Monitoring**: Separate analytics for protocol vs business usage
+
+### **URL Structure Examples**
+
+```bash
+# Business Layer (Your App)
+https://api.paymebro.com/api/payments/create
+https://api.paymebro.com/api/payments/ABC123/qr
+https://api.paymebro.com/api/payments/confirm
+
+# Protocol Layer (Solana Pay)
+https://api.paymebro.com/api/transaction-requests/ABC123
+```
+
+The QR code contains: `solana:https://api.paymebro.com/api/transaction-requests/ABC123`
+
+---
+
+## 🏥 Health Check API
+
+### Health Check
+```http
+GET /health
+```
+
+**Response:**
+```json
+{
+  "timestamp": "2024-01-01T00:00:00.000Z",
+  "status": "healthy",
+  "version": "1.0.0",
+  "uptime": 3600.123,
+  "memory": {
+    "rss": 123456789,
+    "heapTotal": 123456789,
+    "heapUsed": 123456789
+  },
+  "checks": {
+    "database": {
+      "status": "healthy",
+      "responseTime": 50
+    }
+  }
+}
+```
+
+### Liveness Check
+```http
+GET /health/live
+```
+
+---
+
+## Plan Limits & User Service Integration
+
+### Plan Types & Limits
+- **Free**: 10 payments/month
+- **Basic**: 100 payments/month  
+- **Premium**: 1,000 payments/month
+- **Enterprise**: Unlimited payments
+
+### User Service Features
+- **Centralized User Management**: All user-related operations consolidated
 - **Plan Enforcement**: Automatic payment limit checking
-- **Performance**: 10-100x faster transaction history retrieval
-- **Security**: Encrypted master seed storage
+- **Usage Tracking**: Real-time usage statistics
+- **Plan Upgrades**: Seamless plan upgrade functionality
 
-### Derivation Path Structure
-```
-m/44'/501'/2024'/userId/0/paymentIndex
-```
-- `44'`: BIP-44 standard
-- `501'`: Solana coin type
-- `2024'`: PayMeBro app identifier
-- `userId`: User isolation
-- `paymentIndex`: Sequential payment counter
-
-### Plan Limits
-- **Free Tier**: 10 payments/month
-- **Pro Tier**: 100 payments/month
-- **Enterprise**: Unlimited
-
-### Database Schema
-```sql
-user_payment_tracking {
-  web3auth_user_id: string (unique),
-  payment_counter: integer,
-  master_seed_hash: text (encrypted),
-  total_payments: integer,
-  created_at: timestamp,
-  updated_at: timestamp
-}
-
-payments {
-  -- existing fields --
-  payment_counter: integer,
-  derivation_path: string
-}
-```
+### Address Resolution Service
+- **Dynamic Address Resolution**: Hierarchical address resolution system
+- **Fallback Mechanisms**: Multiple fallback levels for reliability
+- **Solana Address Validation**: Comprehensive address validation
+- **Network Detection**: Automatic detection of different blockchain networks
 
 ---
 
@@ -430,25 +737,26 @@ payments {
 {
   "success": false,
   "error": "Error message",
-  "code": "ERROR_CODE"
+  "details": "Additional error details (development only)"
 }
 ```
 
-### Payment Response (Enhanced)
+### Payment Response
 ```json
 {
   "success": true,
-  "reference": "DeterministicSolanaAddress123...",
-  "url": "solana:http://localhost:3000/api/payments/ref/transaction-request",
-  "paymentUrl": "http://localhost:3000/payment/DeterministicSolanaAddress123...",
-  "qrCode": "data:image/png;base64,...",
+  "reference": "SolanaAddress123...",
+  "url": "solana:http://localhost:3000/api/transaction-requests/SolanaAddress123...",
+  "paymentUrl": "http://localhost:3000/payment/SolanaAddress123...",
   "payment": {
     "id": "uuid",
-    "amount": 5.0,
-    "currency": "USDC",
+    "amount": "5.0",
+    "fee_amount": "0.152",
+    "merchant_amount": "5.0",
+    "total_amount_paid": "5.152",
+    "currency": "SOL",
     "status": "pending",
-    "counter": 5,
-    "derivationPath": "m/44'/501'/2024'/user123/0/5"
+    "recipient_address": "MerchantAddress123..."
   }
 }
 ```
@@ -456,16 +764,64 @@ payments {
 ---
 
 ## Rate Limits
-- Payment creation: 10 requests/minute
-- Payment confirmation: 20 requests/minute  
-- Authentication: 5 requests/minute
-- General: 100 requests/minute
+- **Payment Creation**: 10 requests/minute per user
+- **Payment Confirmation**: 20 requests/minute per user
+- **Authentication**: 5 requests/minute per IP
+- **Transaction Requests**: 30 requests/minute per IP
+- **General API**: 100 requests/minute per IP
 
 ## Supported Tokens
 - **SOL**: Native Solana token
 - **USDC**: `Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr` (Devnet)
+- **USDC**: `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` (Mainnet)
 
 ## WebSocket Events
 Connect to `/` for real-time updates:
 - `payment-update`: Payment status changes
 - `subscription-update`: Subscription events
+- `notification-update`: New notifications
+
+---
+
+## Error Codes
+
+### Common Error Codes
+- `PAYMENT_LIMIT_EXCEEDED`: Monthly payment limit reached
+- `INVALID_ADDRESS`: Invalid Solana address format
+- `PAYMENT_NOT_FOUND`: Payment reference not found
+- `USER_NOT_FOUND`: User not registered
+- `VALIDATION_ERROR`: Request validation failed
+- `RATE_LIMIT_EXCEEDED`: Too many requests
+
+### HTTP Status Codes
+- `200`: Success
+- `400`: Bad Request (validation errors)
+- `401`: Unauthorized
+- `403`: Forbidden (plan limits)
+- `404`: Not Found
+- `429`: Too Many Requests (rate limiting)
+- `500`: Internal Server Error
+
+---
+
+## Development Notes
+
+### Environment Variables
+- `NODE_ENV`: Environment (development|production)
+- `PORT`: Server port (default: 3000)
+- `SUPABASE_URL`: Supabase database URL
+- `SUPABASE_SERVICE_KEY`: Supabase service role key
+- `MERCHANT_WALLET_ADDRESS`: Default merchant wallet address
+- `SOLANA_RPC_URL`: Solana RPC endpoint
+- `RESEND_API_KEY`: Email service API key
+
+### Testing Endpoints
+Use the user ID `41822dea-f074-4d35-a980-4910ec8d6c7c` for testing authenticated endpoints.
+
+### Manual Payment Confirmation
+In development environments, you can manually confirm payments using:
+```http
+POST /api/payments/{reference}/confirm
+```
+
+This bypasses blockchain verification and is useful for testing payment flows.

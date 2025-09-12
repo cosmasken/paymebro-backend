@@ -1,5 +1,6 @@
 const database = require('../services/database');
 const { asyncHandler } = require('../middleware/errorHandler');
+const logger = require('../utils/logger');
 
 /**
  * Create payment template
@@ -25,17 +26,17 @@ const createTemplate = asyncHandler(async (req, res) => {
       .single();
 
     if (error) {
-      console.error('Template creation error:', error);
+      logger.error('Template creation error', { error: error.message });
       throw error;
     }
 
     res.json({ success: true, data: template });
   } catch (error) {
-    console.error('Failed to create template:', error);
-    res.status(500).json({ 
-      success: false, 
+    logger.error('Failed to create template', { error: error.message });
+    res.status(500).json({
+      success: false,
       error: 'Failed to create template',
-      details: error.message 
+      details: error.message
     });
   }
 });
@@ -52,7 +53,38 @@ const getUserTemplates = asyncHandler(async (req, res) => {
     .eq('web3auth_user_id', web3AuthUserId)
     .order('created_at', { ascending: false });
 
-  res.json({ success: true, templates: templates || [] });
+  let userTemplates = templates || [];
+
+  // If user has no templates, provide default templates
+  if (userTemplates.length === 0) {
+    const defaultTemplates = [
+      {
+        id: 'default-coffee',
+        name: 'Coffee Shop Payment',
+        amount: 5.00,
+        currency: 'USDC',
+        label: 'Coffee Purchase',
+        message: 'Thank you for your order!',
+        web3auth_user_id: web3AuthUserId,
+        created_at: new Date().toISOString(),
+        isDefault: true
+      },
+      {
+        id: 'default-service',
+        name: 'Service Payment',
+        amount: 25.00,
+        currency: 'USDC',
+        label: 'Service Fee',
+        message: 'Payment for services rendered',
+        web3auth_user_id: web3AuthUserId,
+        created_at: new Date().toISOString(),
+        isDefault: true
+      }
+    ];
+    userTemplates = defaultTemplates;
+  }
+
+  res.json({ success: true, templates: userTemplates });
 });
 
 /**
@@ -105,16 +137,41 @@ const createPaymentFromTemplate = asyncHandler(async (req, res) => {
   const { templateId } = req.params;
   const { customerEmail } = req.body;
 
-  const { data: template } = await database.getClient()
-    .from('payment_templates')
-    .select('*')
-    .eq('id', templateId)
-    .single();
+  let template;
+
+  // Handle default templates
+  if (templateId.startsWith('default-')) {
+    const defaultTemplates = {
+      'default-coffee': {
+        amount: 5.00,
+        label: 'Coffee Purchase',
+        message: 'Thank you for your order!',
+        currency: 'USDC',
+        web3auth_user_id: req.headers['x-user-id']
+      },
+      'default-service': {
+        amount: 25.00,
+        label: 'Service Fee',
+        message: 'Payment for services rendered',
+        currency: 'USDC',
+        web3auth_user_id: req.headers['x-user-id']
+      }
+    };
+    template = defaultTemplates[templateId];
+  } else {
+    // Get template from database
+    const { data: dbTemplate } = await database.getClient()
+      .from('payment_templates')
+      .select('*')
+      .eq('id', templateId)
+      .single();
+    template = dbTemplate;
+  }
 
   if (!template) {
-    return res.status(404).json({ 
-      success: false, 
-      error: 'Template not found' 
+    return res.status(404).json({
+      success: false,
+      error: 'Template not found'
     });
   }
 
@@ -132,7 +189,7 @@ const createPaymentFromTemplate = asyncHandler(async (req, res) => {
   // Use existing payment creation logic
   const PaymentController = require('./payments');
   req.body = paymentData;
-  
+
   // Call payment creation which will handle email notifications
   return PaymentController.createPayment(req, res);
 });

@@ -43,7 +43,7 @@ class DatabaseService {
       if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
         throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY are required');
       }
-      
+
       this.supabase = createClient(
         process.env.SUPABASE_URL,
         process.env.SUPABASE_SERVICE_KEY
@@ -133,11 +133,11 @@ class DatabaseService {
    * @throws {Error} If database operation fails
    */
   async updatePaymentStatus(reference, status, transactionSignature = null) {
-    const updateData = { 
-      status, 
-      updated_at: new Date().toISOString() 
+    const updateData = {
+      status,
+      updated_at: new Date().toISOString()
     };
-    
+
     if (transactionSignature) {
       updateData.transaction_signature = transactionSignature;
     }
@@ -310,6 +310,275 @@ class DatabaseService {
       const dbError = new Error(`Failed to check onboarding status: ${error.message}`);
       dbError.code = error.code;
       dbError.details = error.details;
+      throw dbError;
+    }
+
+    return data;
+  }
+
+  /**
+   * Update user profile
+   * 
+   * @param {string} web3AuthUserId - Web3Auth user ID
+   * @param {Object} updates - Fields to update
+   * @returns {Promise<Object>} Updated user record
+   * @throws {Error} If database operation fails
+   */
+  async updateUser(web3AuthUserId, updates) {
+    const { data, error } = await this.getClient()
+      .from('users')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('web3auth_user_id', web3AuthUserId)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('Database error updating user:', {
+        error: error.message,
+        code: error.code,
+        web3AuthUserId
+      });
+      const dbError = new Error(`Failed to update user: ${error.message}`);
+      dbError.code = error.code;
+      throw dbError;
+    }
+
+    return data;
+  }
+
+  /**
+   * Get user merchant addresses
+   * 
+   * @param {string} web3AuthUserId - Web3Auth user ID
+   * @returns {Promise<Array>} Array of merchant addresses
+   * @throws {Error} If database operation fails
+   */
+  async getUserMerchantAddresses(web3AuthUserId) {
+    const { data, error } = await this.getClient()
+      .from('merchant_addresses')
+      .select('id, web3auth_user_id, address, label, network, is_default, created_at, updated_at')
+      .eq('web3auth_user_id', web3AuthUserId)
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      logger.error('Database error getting merchant addresses:', {
+        error: error.message,
+        code: error.code,
+        web3AuthUserId
+      });
+      const dbError = new Error(`Failed to get merchant addresses: ${error.message}`);
+      dbError.code = error.code;
+      throw dbError;
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Add merchant address
+   * 
+   * @param {string} web3AuthUserId - Web3Auth user ID
+   * @param {string} address - Wallet address
+   * @param {string} label - Address label
+   * @param {string} network - Network (solana, ethereum, polygon)
+   * @param {boolean} isDefault - Whether this is the default address
+   * @returns {Promise<Object>} Created address record
+   * @throws {Error} If database operation fails
+   */
+  async addMerchantAddress(web3AuthUserId, address, label, network, isDefault = false) {
+    // If setting as default, unset other defaults first
+    if (isDefault) {
+      await this.getClient()
+        .from('merchant_addresses')
+        .update({ is_default: false })
+        .eq('web3auth_user_id', web3AuthUserId)
+        .eq('network', network);
+    }
+
+    const { data, error } = await this.getClient()
+      .from('merchant_addresses')
+      .insert({
+        web3auth_user_id: web3AuthUserId,
+        address,
+        label,
+        network,
+        is_default: isDefault
+      })
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('Database error adding merchant address:', {
+        error: error.message,
+        code: error.code,
+        web3AuthUserId,
+        address,
+        network
+      });
+      const dbError = new Error(`Failed to add merchant address: ${error.message}`);
+      dbError.code = error.code;
+      throw dbError;
+    }
+
+    return data;
+  }
+
+  /**
+   * Update merchant address
+   * 
+   * @param {string} addressId - Address ID
+   * @param {Object} updates - Fields to update
+   * @returns {Promise<Object>} Updated address record
+   * @throws {Error} If database operation fails
+   */
+  async updateMerchantAddress(addressId, updates) {
+    // If setting as default, unset other defaults first
+    if (updates.is_default) {
+      const address = await this.getClient()
+        .from('merchant_addresses')
+        .select('web3auth_user_id, network')
+        .eq('id', addressId)
+        .single();
+
+      if (address.data) {
+        await this.getClient()
+          .from('merchant_addresses')
+          .update({ is_default: false })
+          .eq('web3auth_user_id', address.data.web3auth_user_id)
+          .eq('network', address.data.network);
+      }
+    }
+
+    const { data, error } = await this.getClient()
+      .from('merchant_addresses')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', addressId)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('Database error updating merchant address:', {
+        error: error.message,
+        code: error.code,
+        addressId
+      });
+      const dbError = new Error(`Failed to update merchant address: ${error.message}`);
+      dbError.code = error.code;
+      throw dbError;
+    }
+
+    return data;
+  }
+
+  /**
+   * Delete merchant address
+   * 
+   * @param {string} addressId - Address ID
+   * @returns {Promise<boolean>} Success status
+   * @throws {Error} If database operation fails
+   */
+  async deleteMerchantAddress(addressId) {
+    const { error } = await this.getClient()
+      .from('merchant_addresses')
+      .delete()
+      .eq('id', addressId);
+
+    if (error) {
+      logger.error('Database error deleting merchant address:', {
+        error: error.message,
+        code: error.code,
+        addressId
+      });
+      const dbError = new Error(`Failed to delete merchant address: ${error.message}`);
+      dbError.code = error.code;
+      throw dbError;
+    }
+
+    return true;
+  }
+
+  /**
+   * Set default merchant address
+   * 
+   * @param {string} web3AuthUserId - Web3Auth user ID
+   * @param {string} addressId - Address ID to set as default
+   * @returns {Promise<boolean>} Success status
+   * @throws {Error} If database operation fails
+   */
+  async setDefaultMerchantAddress(web3AuthUserId, addressId) {
+    // Get the address to find its network
+    const { data: address, error: getError } = await this.getClient()
+      .from('merchant_addresses')
+      .select('network')
+      .eq('id', addressId)
+      .eq('web3auth_user_id', web3AuthUserId)
+      .single();
+
+    if (getError || !address) {
+      return false;
+    }
+
+    // Unset all defaults for this user and network
+    await this.getClient()
+      .from('merchant_addresses')
+      .update({ is_default: false })
+      .eq('web3auth_user_id', web3AuthUserId)
+      .eq('network', address.network);
+
+    // Set the new default
+    const { error } = await this.getClient()
+      .from('merchant_addresses')
+      .update({ is_default: true })
+      .eq('id', addressId);
+
+    if (error) {
+      logger.error('Database error setting default merchant address:', {
+        error: error.message,
+        code: error.code,
+        web3AuthUserId,
+        addressId
+      });
+      const dbError = new Error(`Failed to set default merchant address: ${error.message}`);
+      dbError.code = error.code;
+      throw dbError;
+    }
+
+    return true;
+  }
+
+  /**
+   * Get user's default merchant address for a network
+   * 
+   * @param {string} web3AuthUserId - Web3Auth user ID
+   * @param {string} network - Network (solana, ethereum, polygon)
+   * @returns {Promise<Object|null>} Default address or null
+   * @throws {Error} If database operation fails
+   */
+  async getUserDefaultAddress(web3AuthUserId, network = 'solana') {
+    const { data, error } = await this.getClient()
+      .from('merchant_addresses')
+      .select('address, label')
+      .eq('web3auth_user_id', web3AuthUserId)
+      .eq('network', network)
+      .eq('is_default', true)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      logger.error('Database error getting default address:', {
+        error: error.message,
+        code: error.code,
+        web3AuthUserId,
+        network
+      });
+      const dbError = new Error(`Failed to get default address: ${error.message}`);
+      dbError.code = error.code;
       throw dbError;
     }
 

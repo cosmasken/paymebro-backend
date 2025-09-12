@@ -3,7 +3,7 @@ const logger = require('../utils/logger');
 
 // Initialize Resend only if API key is available
 let resend = null;
-const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@afripay.com';
+const FROM_EMAIL = process.env.FROM_EMAIL || 'payments@payments.paymebro.xyz'
 
 if (process.env.RESEND_API_KEY) {
   const { Resend } = require('resend');

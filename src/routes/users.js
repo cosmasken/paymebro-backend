@@ -1,43 +1,61 @@
 const express = require('express');
 const router = express.Router();
-const { 
+const {
   registerUser,
-  getProfile,
-  completeOnboarding, 
-  getOnboardingStatus 
+  getUserProfile,
+  updateUserProfile,
+  getUserAddresses,
+  addUserAddress,
+  updateUserAddress,
+  deleteUserAddress,
+  setDefaultUserAddress,
+  validateAddress
 } = require('../controllers/users');
-const { 
-  validateUserCreation, 
-  validateUserOnboarding 
-} = require('../middleware/validation');
-const { authLimiter } = require('../middleware/rateLimiting');
+const { validateUserRegistration, validateUserRequest, validateAddressRequest } = require('../middleware/validation');
 
 /**
- * Register new user or get existing user
+ * Register new user
  */
-router.post('/register', authLimiter, validateUserCreation, registerUser);
+router.post('/register', validateUserRegistration, registerUser);
 
 /**
- * Get user profile by web3AuthUserId
+ * Get user profile
  */
-router.get('/profile/:web3AuthUserId', getProfile);
+router.get('/profile/:userId', getUserProfile);
 
 /**
- * Get user by ID (alias for profile)
+ * Update user profile
  */
-router.get('/:userId', (req, res) => {
-  req.params.web3AuthUserId = req.params.userId;
-  getProfile(req, res);
-});
+router.put('/profile/:userId', validateUserRequest, updateUserProfile);
 
 /**
- * Complete user onboarding
+ * Get user merchant addresses
  */
-router.post('/onboarding/complete', authLimiter, validateUserOnboarding, completeOnboarding);
+router.get('/:userId/addresses', getUserAddresses);
 
 /**
- * Get onboarding status
+ * Add new merchant address
  */
-router.get('/onboarding/status/:web3AuthUserId', getOnboardingStatus);
+router.post('/:userId/addresses', validateAddressRequest, addUserAddress);
+
+/**
+ * Update merchant address
+ */
+router.put('/:userId/addresses/:addressId', updateUserAddress);
+
+/**
+ * Delete merchant address
+ */
+router.delete('/:userId/addresses/:addressId', deleteUserAddress);
+
+/**
+ * Set default merchant address
+ */
+router.post('/:userId/addresses/:addressId/set-default', setDefaultUserAddress);
+
+/**
+ * Validate address
+ */
+router.post('/addresses/validate', validateAddress);
 
 module.exports = router;

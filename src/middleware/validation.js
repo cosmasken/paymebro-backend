@@ -27,7 +27,7 @@ const sanitizeInput = (input) => {
 const validatePaymentRequest = (req, res, next) => {
   // Sanitize input first
   req.body = sanitizeInput(req.body);
-  
+
   const schema = Joi.object({
     amount: Joi.number().positive().required(),
     label: Joi.string().min(1).max(100).required(),
@@ -41,7 +41,7 @@ const validatePaymentRequest = (req, res, next) => {
   });
 
   const { error, value } = schema.validate(req.body);
-  
+
   if (error) {
     logger.warn('Payment validation failed:', error.details);
     return res.status(400).json({
@@ -60,14 +60,14 @@ const validatePaymentRequest = (req, res, next) => {
 const validatePaymentConfirmation = (req, res, next) => {
   // Sanitize input first
   req.body = sanitizeInput(req.body);
-  
+
   const schema = Joi.object({
     reference: Joi.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,88}$/).required(),
     signature: Joi.string().regex(/^[1-9A-HJ-NP-Za-km-z]{64,88}$/).required()
   });
 
   const { error, value } = schema.validate(req.body);
-  
+
   if (error) {
     logger.warn('Payment confirmation validation failed:', error.details);
     return res.status(400).json({
@@ -83,10 +83,39 @@ const validatePaymentConfirmation = (req, res, next) => {
 /**
  * Validation middleware for user registration
  */
+const validateUserRegistration = (req, res, next) => {
+  // Sanitize input first
+  req.body = sanitizeInput(req.body);
+
+  const schema = Joi.object({
+    web3auth_user_id: Joi.string().min(1).required(),
+    email: Joi.string().email().optional().allow(''),
+    name: Joi.string().min(1).max(100).optional().allow(''),
+    solana_address: Joi.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/).optional(),
+    ethereum_address: Joi.string().regex(/^0x[a-fA-F0-9]{40}$/).optional()
+  });
+
+  const { error, value } = schema.validate(req.body);
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      details: error.details.map(d => d.message)
+    });
+  }
+
+  req.body = value;
+  next();
+};
+
+/**
+ * Validation middleware for user creation (legacy)
+ */
 const validateUserCreation = (req, res, next) => {
   // Sanitize input first
   req.body = sanitizeInput(req.body);
-  
+
   const schema = Joi.object({
     web3AuthUserId: Joi.string().required(),
     email: Joi.string().email().optional(),
@@ -100,7 +129,7 @@ const validateUserCreation = (req, res, next) => {
   });
 
   const { error, value } = schema.validate(req.body);
-  
+
   if (error) {
     return res.status(400).json({
       success: false,
@@ -119,7 +148,7 @@ const validateUserCreation = (req, res, next) => {
 const validateUserOnboarding = (req, res, next) => {
   // Sanitize input first
   req.body = sanitizeInput(req.body);
-  
+
   const schema = Joi.object({
     web3AuthUserId: Joi.string().required(),
     firstName: Joi.string().min(1).max(50).required(),
@@ -130,7 +159,62 @@ const validateUserOnboarding = (req, res, next) => {
   });
 
   const { error, value } = schema.validate(req.body);
-  
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      details: error.details.map(d => d.message)
+    });
+  }
+
+  req.body = value;
+  next();
+};
+
+/**
+ * Validation middleware for user profile updates
+ */
+const validateUserRequest = (req, res, next) => {
+  // Sanitize input first
+  req.body = sanitizeInput(req.body);
+
+  const schema = Joi.object({
+    businessName: Joi.string().max(100).optional(),
+    businessType: Joi.string().max(50).optional(),
+    defaultReceivingAddress: Joi.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/).optional()
+  });
+
+  const { error, value } = schema.validate(req.body);
+
+  if (error) {
+    return res.status(400).json({
+      success: false,
+      error: 'Validation failed',
+      details: error.details.map(d => d.message)
+    });
+  }
+
+  req.body = value;
+  next();
+};
+
+/**
+ * Validation middleware for merchant address requests
+ */
+const validateAddressRequest = (req, res, next) => {
+  // Sanitize input first
+  req.body = sanitizeInput(req.body);
+
+  const schema = Joi.object({
+    address: Joi.string().required(),
+    label: Joi.string().min(1).max(50).required(),
+    network: Joi.string().valid('solana', 'ethereum', 'polygon').required(),
+    is_default: Joi.boolean().optional()
+  });
+
+  const { error, value } = schema.validate(req.body);
+
   if (error) {
     return res.status(400).json({
       success: false,
@@ -146,6 +230,9 @@ const validateUserOnboarding = (req, res, next) => {
 module.exports = {
   validatePaymentRequest,
   validatePaymentConfirmation,
+  validateUserRegistration,
   validateUserCreation,
-  validateUserOnboarding
+  validateUserOnboarding,
+  validateUserRequest,
+  validateAddressRequest
 };

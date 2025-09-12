@@ -1,7 +1,7 @@
-const { encodeURL, findReference, validateTransfer, TransactionRequestURLFields } = require('@solana/pay');
-const { MERCHANT_WALLET, USDC_MINT, establishConnection } = require('../services/solana');
+const { encodeURL, findReference, validateTransfer } = require('@solana/pay');
+const { establishConnection } = require('../services/solana');
 const BigNumber = require('bignumber.js');
-const { Keypair, PublicKey } = require('@solana/web3.js');
+const { PublicKey } = require('@solana/web3.js');
 const crypto = require('crypto');
 const notificationService = require('../services/notificationService');
 const database = require('../services/database');
@@ -10,6 +10,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const QRCode = require('qrcode');
 const { notifyPaymentUpdate } = require('../services/websocket');
 const addressService = require('../services/addressService');
+const userService = require('../services/userService');
 
 /**
  * Create a new payment request with deterministic reference
@@ -28,28 +29,25 @@ const createPayment = asyncHandler(async (req, res) => {
   }
 
   // Check if user can create more payments (plan enforcement)
-  const userPlan = await addressService.getUserPlan(web3AuthUserId);
-  const canCreate = await addressService.canUserCreatePayment(web3AuthUserId, userPlan);
+  const userStats = await userService.getUserStats(web3AuthUserId);
 
-  if (!canCreate) {
-    const monthlyCount = await addressService.getMonthlyPaymentCount(web3AuthUserId);
-    const planLimits = { free: 100, pro: 1000, enterprise: 'unlimited' };
-    const limit = planLimits[userPlan] || planLimits.free;
+  if (!userStats.canCreatePayment) {
 
     logger.warn('Payment creation failed: Monthly limit exceeded', {
       web3AuthUserId,
-      plan: userPlan,
-      monthlyCount,
-      limit
+      plan: userStats.plan,
+      monthlyCount: userStats.monthlyPayments,
+      limit: userStats.monthlyLimit
     });
 
     return res.status(403).json({
       success: false,
-      error: `Monthly payment limit exceeded (${monthlyCount}/${limit}). Upgrade your plan for more payments.`,
+      error: `Monthly payment limit exceeded (${userStats.monthlyPayments}/${userStats.monthlyLimit}). Upgrade your plan for more payments.`,
       details: {
-        currentPlan: userPlan,
-        monthlyUsage: monthlyCount,
-        monthlyLimit: limit
+        currentPlan: userStats.plan,
+        monthlyUsage: userStats.monthlyPayments,
+        monthlyLimit: userStats.monthlyLimit,
+        remaining: userStats.remainingPayments
       }
     });
   }
@@ -67,10 +65,59 @@ const createPayment = asyncHandler(async (req, res) => {
 
   const amountBigNumber = new BigNumber(amount);
 
-  // Use provided merchant wallet or user's default wallet
-  const recipientWallet = merchantWallet ?
-    new PublicKey(merchantWallet) :
-    new PublicKey(existingUser.solana_address);
+  // Determine recipient wallet address with priority order:
+  // 1. Provided merchantWallet parameter (highest priority)
+  // 2. User's default merchant address for the network
+  // 3. User's primary wallet address (solana_address)
+  // 4. Environment variable fallback (lowest priority)
+  let recipientWallet;
+  let recipientSource = 'unknown';
+
+  if (merchantWallet) {
+    recipientWallet = new PublicKey(merchantWallet);
+    recipientSource = 'provided';
+  } else {
+    // Try to get user's default merchant address
+    try {
+      const defaultAddress = await database.getUserDefaultAddress(web3AuthUserId, 'solana');
+      if (defaultAddress && defaultAddress.address) {
+        recipientWallet = new PublicKey(defaultAddress.address);
+        recipientSource = 'user_default';
+      } else if (existingUser.solana_address) {
+        recipientWallet = new PublicKey(existingUser.solana_address);
+        recipientSource = 'user_primary';
+      } else {
+        // Fallback to environment variable for backward compatibility
+        const fallbackAddress = process.env.MERCHANT_WALLET_ADDRESS || 'GDBPQ6G7k9xMFcmz2GqEgmcesC6DRzeWQPfRPk1hQNBo';
+        recipientWallet = new PublicKey(fallbackAddress);
+        recipientSource = 'fallback';
+        logger.warn('Using fallback merchant wallet address', {
+          userId: web3AuthUserId,
+          fallbackAddress
+        });
+      }
+    } catch (addressError) {
+      logger.warn('Failed to get user default address, using fallback', {
+        userId: web3AuthUserId,
+        error: addressError.message
+      });
+
+      if (existingUser.solana_address) {
+        recipientWallet = new PublicKey(existingUser.solana_address);
+        recipientSource = 'user_primary';
+      } else {
+        const fallbackAddress = process.env.MERCHANT_WALLET_ADDRESS || 'GDBPQ6G7k9xMFcmz2GqEgmcesC6DRzeWQPfRPk1hQNBo';
+        recipientWallet = new PublicKey(fallbackAddress);
+        recipientSource = 'fallback';
+      }
+    }
+  }
+
+  logger.info('Recipient address resolved', {
+    userId: web3AuthUserId,
+    recipientAddress: recipientWallet.toString(),
+    source: recipientSource
+  });
 
   // Only use USDC if explicitly specified via splToken parameter
   const tokenMint = splToken ? new PublicKey(splToken) : null;
@@ -335,9 +382,13 @@ const confirmPayment = asyncHandler(async (req, res) => {
   try {
     const signatureInfo = await findReference(connection, referencePublicKey, { finality: 'confirmed' });
 
-    // Validate the transfer
+    // Validate the transfer - use the actual recipient address from the payment
+    const recipientAddress = payment.recipient_address ?
+      new PublicKey(payment.recipient_address) :
+      MERCHANT_WALLET;
+
     const validateParams = {
-      recipient: MERCHANT_WALLET,
+      recipient: recipientAddress,
       amount: new BigNumber(payment.amount),
       reference: referencePublicKey
     };
@@ -346,6 +397,13 @@ const confirmPayment = asyncHandler(async (req, res) => {
     if (payment.spl_token_mint) {
       validateParams.splToken = new PublicKey(payment.spl_token_mint);
     }
+
+    logger.info('Validating transfer with params:', {
+      amount: payment.amount,
+      recipient: recipientAddress.toString(),
+      reference: referencePublicKey.toString(),
+      splToken: payment.spl_token_mint || 'none'
+    });
 
     await validateTransfer(
       connection,
@@ -745,12 +803,19 @@ const createTransaction = asyncHandler(async (req, res) => {
 
   try {
     const { Connection, PublicKey, Transaction } = require('@solana/web3.js');
-    const { MERCHANT_WALLET, establishConnection, createTransferWithAta } = require('../services/solana');
+    const { establishConnection, createTransferWithAta } = require('../services/solana');
 
     const sender = new PublicKey(account);
     const connection = await establishConnection();
 
-    const recipient = new PublicKey(session.recipient_address || MERCHANT_WALLET.toString());
+    // Use the recipient address from the session (payment record)
+    if (!session.recipient_address) {
+      return res.status(400).json({
+        error: 'Payment recipient address not found'
+      });
+    }
+
+    const recipient = new PublicKey(session.recipient_address);
     const amount = new BigNumber(session.amount);
     const referenceKey = new PublicKey(session.reference);
     const splToken = session.spl_token_mint ? new PublicKey(session.spl_token_mint) : undefined;
@@ -779,9 +844,9 @@ const createTransaction = asyncHandler(async (req, res) => {
     });
     const base64Transaction = serialized.toString('base64');
 
-    logger.info('Transaction created:', { 
-      reference, 
-      account, 
+    logger.info('Transaction created:', {
+      reference,
+      account,
       type: splToken ? 'SPL' : 'SOL',
       recipient: recipient.toString(),
       splToken: splToken?.toString()

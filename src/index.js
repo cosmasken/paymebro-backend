@@ -53,6 +53,9 @@ const PORT = process.env.PORT || 3000;
 // Initialize WebSocket
 initializeWebSocket(server);
 
+// Trust proxy for X-Forwarded-For headers
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -85,8 +88,8 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? process.env.ALLOWED_ORIGINS?.split(',') 
+  origin: process.env.NODE_ENV === 'production'
+    ? process.env.ALLOWED_ORIGINS?.split(',')
     : true,
   credentials: true
 }));
@@ -152,8 +155,10 @@ const webhookRoutes = require('./routes/webhooks');
 const templateRoutes = require('./routes/templates');
 const analyticsRoutes = require('./routes/analytics');
 const subscriptionRoutes = require('./routes/subscriptions');
+const notificationRoutes = require('./routes/notifications');
 const emailRoutes = require('./routes/emails');
 const planRoutes = require('./routes/plans');
+const transactionRequestRoutes = require('./routes/transaction-requests');
 
 // Register API routes
 app.use('/api/payments', paymentRoutes);
@@ -162,8 +167,10 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/plans', planRoutes);
+app.use('/api/transaction-requests', transactionRequestRoutes);
 
 // Payment page route
 app.get('/payment/:reference', (req, res) => {
@@ -177,10 +184,10 @@ app.use(errorHandler);
 // Graceful shutdown
 const gracefulShutdown = (signal) => {
   logger.info(`${signal} received, shutting down gracefully`);
-  
+
   // Stop payment monitoring
   paymentMonitor.stopMonitoring();
-  
+
   const server = app.listen(PORT);
   server.close(() => {
     logger.info('HTTP server closed');
@@ -211,11 +218,11 @@ process.on('uncaughtException', (error) => {
 
 // Start server
 server.listen(PORT, () => {
-  logger.info(`Solana Pay server running on port ${PORT}`);
-  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  logger.info(`Health check available at: http://localhost:${PORT}/health`);
-  logger.info('WebSocket server initialized');
-  
+  // logger.info(`Solana Pay server running on port ${PORT}`);
+  // logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  // logger.info(`Health check available at: http://localhost:${PORT}/health`);
+  // logger.info('WebSocket server initialized');
+
   // Start automatic payment monitoring
   paymentMonitor.startMonitoring();
   logger.info('Payment monitoring started');

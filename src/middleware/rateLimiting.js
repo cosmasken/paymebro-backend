@@ -13,7 +13,8 @@ const paymentCreationLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipFailedRequests: true // Don't count failed requests
+  skipFailedRequests: true, // Don't count failed requests
+  trustProxy: true
 });
 
 /**
@@ -29,7 +30,8 @@ const paymentConfirmationLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipFailedRequests: true
+  skipFailedRequests: true,
+  trustProxy: true
 });
 
 /**
@@ -45,7 +47,8 @@ const transactionRequestLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipFailedRequests: true
+  skipFailedRequests: true,
+  trustProxy: true
 });
 
 /**
@@ -61,7 +64,8 @@ const generalApiLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipFailedRequests: true
+  skipFailedRequests: true,
+  trustProxy: true
 });
 
 /**
@@ -77,7 +81,8 @@ const authLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  skipFailedRequests: false // Count all requests including failed ones
+  skipFailedRequests: false, // Count all requests including failed ones
+  trustProxy: true
 });
 
 module.exports = {

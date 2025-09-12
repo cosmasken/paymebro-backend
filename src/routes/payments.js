@@ -7,9 +7,7 @@ const {
   generatePaymentQR, 
   sendInvoice, 
   confirmPayment, 
-  manualConfirmPayment,
-  getTransactionRequest,
-  createTransaction
+  manualConfirmPayment
 } = require('../controllers/payments');
 const { validatePaymentRequest, validatePaymentConfirmation } = require('../middleware/validation');
 const { paymentCreationLimiter, paymentConfirmationLimiter } = require('../middleware/rateLimiting');
@@ -41,19 +39,15 @@ router.get('/:reference/qr', trackQRScan, generatePaymentQR);
 router.post('/:reference/invoice', sendInvoice);
 
 /**
- * Transaction request endpoints (consolidated from separate route file)
- */
-router.get('/:reference/transaction-request', getTransactionRequest);
-router.post('/:reference/transaction-request', createTransaction);
-
-/**
  * Confirm payment transaction
  */
 router.post('/confirm', paymentConfirmationLimiter, validatePaymentConfirmation, confirmPayment);
 
 /**
- * Manual confirm payment (for testing)
+ * Manual confirm payment (restricted environments only)
  */
-router.post('/:reference/confirm', paymentConfirmationLimiter, manualConfirmPayment);
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/:reference/confirm', paymentConfirmationLimiter, manualConfirmPayment);
+}
 
 module.exports = router;

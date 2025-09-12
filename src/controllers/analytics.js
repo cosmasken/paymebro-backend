@@ -1,16 +1,14 @@
 const database = require('../services/database');
 const { asyncHandler } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
-const DeterministicAddressService = require('../services/deterministicAddressService');
-
-const deterministicService = new DeterministicAddressService();
+const userService = require('../services/userService');
 
 /**
  * Get basic payment metrics with user tracking
  */
 const getMetrics = asyncHandler(async (req, res) => {
   const userId = req.headers['x-user-id'];
-  
+
   if (!userId) {
     return res.status(400).json({
       success: false,
@@ -36,23 +34,12 @@ const getMetrics = asyncHandler(async (req, res) => {
       .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0) || 0;
 
     // Success rate
-    const conversionRate = totalPayments > 0 
+    const conversionRate = totalPayments > 0
       ? ((confirmedPayments / totalPayments) * 100).toFixed(2)
       : '0';
 
     // Get user plan and tracking info
-    const userTracking = await deterministicService.getUserPaymentTracking(userId);
-    const userPlan = await deterministicService.getUserPlan(userId);
-    const monthlyCount = await deterministicService.getMonthlyPaymentCount(userId);
-    
-    // Plan limits
-    const planLimits = {
-      free: 100,
-      pro: 1000,
-      enterprise: Infinity
-    };
-    
-    const monthlyLimit = planLimits[userPlan] || planLimits.free;
+    const userStats = await userService.getUserStats(userId);
 
     const metrics = {
       totalPayments,
@@ -62,14 +49,15 @@ const getMetrics = asyncHandler(async (req, res) => {
       conversionRate,
       recentPayments: totalPayments, // For compatibility
       planUsage: {
-        current: monthlyCount,
-        limit: monthlyLimit === Infinity ? 'unlimited' : monthlyLimit,
-        percentage: monthlyLimit === Infinity ? 0 : Math.min((monthlyCount / monthlyLimit) * 100, 100)
+        current: userStats.monthlyPayments,
+        limit: userStats.monthlyLimit === Infinity ? 'unlimited' : userStats.monthlyLimit,
+        percentage: userStats.monthlyLimit === Infinity ? 0 : Math.min((userStats.monthlyPayments / userStats.monthlyLimit) * 100, 100)
       },
       planInfo: {
-        currentPlan: userPlan,
-        monthlyUsage: monthlyCount,
-        monthlyLimit: monthlyLimit === Infinity ? 'unlimited' : monthlyLimit
+        currentPlan: userStats.plan,
+        monthlyUsage: userStats.monthlyPayments,
+        monthlyLimit: userStats.monthlyLimit === Infinity ? 'unlimited' : userStats.monthlyLimit,
+        remaining: userStats.remainingPayments === Infinity ? 'unlimited' : userStats.remainingPayments
       }
     };
 
@@ -92,13 +80,20 @@ const getMetrics = asyncHandler(async (req, res) => {
  */
 const getPaymentHistory = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10 } = req.query;
+  const userId = req.headers['x-user-id'];
   const offset = (page - 1) * limit;
 
-  const { data: payments, count } = await database.getClient()
+  // If user ID is provided, filter by user, otherwise return all payments
+  let query = database.getClient()
     .from('payments')
     .select('*', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+    .order('created_at', { ascending: false });
+
+  if (userId) {
+    query = query.eq('web3auth_user_id', userId);
+  }
+
+  const { data: payments, count } = await query.range(offset, offset + limit - 1);
 
   res.json({
     success: true,
@@ -117,7 +112,7 @@ const getPaymentHistory = asyncHandler(async (req, res) => {
  */
 const getMerchantAnalytics = asyncHandler(async (req, res) => {
   const web3AuthUserId = req.headers['x-user-id'];
-  
+
   if (!web3AuthUserId) {
     return res.status(400).json({
       success: false,
@@ -171,7 +166,7 @@ const getMerchantAnalytics = asyncHandler(async (req, res) => {
  */
 const getPaymentAnalytics = asyncHandler(async (req, res) => {
   const { reference } = req.params;
-  
+
   try {
     const { data: payment } = await database.getClient()
       .from('payments')
@@ -213,7 +208,7 @@ const getPaymentAnalytics = asyncHandler(async (req, res) => {
 const getAnalyticsTrends = asyncHandler(async (req, res) => {
   const web3AuthUserId = req.headers['x-user-id'];
   const { period = '30d' } = req.query;
-  
+
   try {
     let startDate;
     if (period === '7d') {

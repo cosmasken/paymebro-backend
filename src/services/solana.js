@@ -1,12 +1,13 @@
 const { Connection, PublicKey, Transaction, SystemProgram, TransactionInstruction } = require('@solana/web3.js');
-const { 
-  getAssociatedTokenAddress, 
-  createAssociatedTokenAccountInstruction, 
+const {
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
   getAccount,
   TOKEN_PROGRAM_ID,
   getMint,
   createTransferCheckedInstruction
 } = require('@solana/spl-token');
+const logger = require('../utils/logger');
 
 // Use environment variable for merchant wallet, fallback to hardcoded for backward compatibility
 const MERCHANT_WALLET = new PublicKey(
@@ -24,10 +25,10 @@ const USDC_MINT = new PublicKey(
 async function establishConnection() {
   const rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
   const connection = new Connection(rpcUrl, 'confirmed');
-  
+
   // Test connection
   await connection.getLatestBlockhash();
-  
+
   return connection;
 }
 
@@ -62,11 +63,11 @@ async function ensureAssociatedTokenAccount(connection, payer, recipient, mint) 
   try {
     // Check if recipient already has an associated token account
     const hasAta = await hasAssociatedTokenAccount(connection, recipient, mint);
-    
+
     if (!hasAta) {
       // Create associated token account
       const ata = await getAssociatedTokenAddress(mint, recipient);
-      
+
       // Create transaction to create the ATA
       const transaction = new Transaction().add(
         createAssociatedTokenAccountInstruction(
@@ -76,12 +77,12 @@ async function ensureAssociatedTokenAccount(connection, payer, recipient, mint) 
           mint
         )
       );
-      
+
       // Get latest blockhash
       const { blockhash } = await connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
       transaction.feePayer = payer;
-      
+
       // Sign and send transaction
       // Note: In this context, we can't actually sign the transaction as we don't have the payer's private key
       // This is just for reference - we'll handle this differently in the actual implementation
@@ -106,31 +107,45 @@ async function ensureAssociatedTokenAccount(connection, payer, recipient, mint) 
  */
 async function createTransferWithAta(connection, sender, transferParams) {
   const { recipient, amount, splToken, reference, memo } = transferParams;
-  
+
   // For SOL transfers, create a custom transaction that works with new wallets
   if (!splToken) {
     try {
       const { LAMPORTS_PER_SOL, SystemProgram, Transaction, TransactionInstruction } = require('@solana/web3.js');
       const BigNumber = require('bignumber.js');
-      
+
       // Check sender has enough funds
       const senderInfo = await connection.getAccountInfo(sender);
       if (!senderInfo) throw new Error('sender not found');
-      
+
       // Convert amount to lamports
       const lamports = new BigNumber(amount).times(LAMPORTS_PER_SOL).integerValue().toNumber();
       if (lamports > senderInfo.lamports) throw new Error('insufficient funds');
-      
-      // Create transaction
+
+      // Create transaction with reference included in the transfer instruction
       const transaction = new Transaction();
-      transaction.add(
-        SystemProgram.transfer({
-          fromPubkey: sender,
-          toPubkey: recipient,
-          lamports,
-        })
-      );
-      
+
+      // Create transfer instruction with reference included as account key
+      const transferInstruction = SystemProgram.transfer({
+        fromPubkey: sender,
+        toPubkey: recipient,
+        lamports,
+      });
+
+      // Add reference as additional account key to the transfer instruction
+      if (reference) {
+        const references = Array.isArray(reference) ? reference : [reference];
+        for (const pubkey of references) {
+          transferInstruction.keys.push({
+            pubkey: pubkey,
+            isSigner: false,
+            isWritable: false
+          });
+        }
+      }
+
+      transaction.add(transferInstruction);
+
       // Add memo if provided
       if (memo) {
         const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
@@ -142,54 +157,39 @@ async function createTransferWithAta(connection, sender, transferParams) {
           })
         );
       }
-      
-      // Add reference keys if provided
-      if (reference) {
-        const references = Array.isArray(reference) ? reference : [reference];
-        // For SOL transfers, we add references as additional instructions
-        for (const pubkey of references) {
-          transaction.add(
-            new TransactionInstruction({
-              programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
-              keys: [{ pubkey: sender, isSigner: true, isWritable: false }],
-              data: Buffer.from(pubkey.toBase58(), 'utf8'),
-            })
-          );
-        }
-      }
-      
+
       // Set fee payer and blockhash
       transaction.feePayer = sender;
       const { blockhash } = await connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
-      
+
       return transaction;
     } catch (error) {
-      console.error('Error in SOL transfer creation:', error);
+      logger.error('Error in SOL transfer creation', { error: error.message });
       throw new Error(`Failed to create SOL transfer: ${error.message}`);
     }
   }
-  
+
   // For SPL token transfers, we need to handle the associated token account creation
   try {
     // Check if recipient has an associated token account
     const hasAta = await hasAssociatedTokenAccount(connection, recipient, splToken);
-    
+
     if (hasAta) {
       // If recipient already has an ATA, create a custom transfer that works with new wallets
       try {
         // Create the transfer instruction using the SPL token library directly
         const recipientAta = await getAssociatedTokenAddress(splToken, recipient);
         const senderAta = await getAssociatedTokenAddress(splToken, sender);
-        
+
         // Get mint info to determine decimals
         const mintInfo = await getMintInfo(connection, splToken);
         const decimals = mintInfo.decimals;
-        
+
         // Convert amount to integer tokens
         const tokens = BigInt(amount.times(10 ** decimals).integerValue().toString());
-        
-        // Create transfer instruction
+
+        // Create transfer instruction with proper reference handling
         const transferInstruction = createTransferCheckedInstruction(
           senderAta,
           splToken,
@@ -198,12 +198,20 @@ async function createTransferWithAta(connection, sender, transferParams) {
           tokens,
           decimals
         );
-        
-        // Create transaction
+
+        // Add reference keys to the transfer instruction BEFORE adding to transaction
+        // This is critical for Solana Pay validation to work correctly
+        if (reference) {
+          const references = Array.isArray(reference) ? reference : [reference];
+          for (const pubkey of references) {
+            transferInstruction.keys.push({ pubkey, isWritable: false, isSigner: false });
+          }
+        }
+
+        // Create transaction with proper instruction order
         const transaction = new Transaction();
-        transaction.add(transferInstruction);
-        
-        // Add memo if provided
+
+        // Add memo FIRST if provided (Solana Pay expects this order)
         if (memo) {
           const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
           transaction.add(
@@ -214,40 +222,27 @@ async function createTransferWithAta(connection, sender, transferParams) {
             })
           );
         }
-        
-        // IMPORTANT: For Solana Pay validation, references should be handled as separate instructions
-        // not by modifying the transfer instruction keys
-        if (reference) {
-          const references = Array.isArray(reference) ? reference : [reference];
-          // Add references as separate memo instructions (this is how Solana Pay handles references)
-          for (const pubkey of references) {
-            transaction.add(
-              new TransactionInstruction({
-                programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
-                keys: [],
-                data: Buffer.from(pubkey.toBase58(), 'utf8'),
-              })
-            );
-          }
-        }
-        
+
+        // Add transfer instruction LAST (this is what Solana Pay validates)
+        transaction.add(transferInstruction);
+
         // Set fee payer and blockhash
         transaction.feePayer = sender;
         const { blockhash } = await connection.getLatestBlockhash();
         transaction.recentBlockhash = blockhash;
-        
+
         return transaction;
       } catch (error) {
-        console.error('Error in SPL token transfer creation:', error);
+        logger.error('Error in SPL token transfer creation', { error: error.message });
         throw new Error(`Failed to create SPL token transfer: ${error.message}`);
       }
     } else {
       // If recipient doesn't have an ATA, we need to create a custom transaction
       // that includes both the ATA creation and the transfer
-      
+
       // First, get the associated token address
       const recipientAta = await getAssociatedTokenAddress(splToken, recipient);
-      
+
       // Create the associated token account instruction
       const createAtaInstruction = createAssociatedTokenAccountInstruction(
         sender, // payer
@@ -255,18 +250,18 @@ async function createTransferWithAta(connection, sender, transferParams) {
         recipient,
         splToken
       );
-      
+
       // Create the transfer instruction using the SPL token library directly
       const senderAta = await getAssociatedTokenAddress(splToken, sender);
-      
+
       // Get mint info to determine decimals
       const mintInfo = await getMintInfo(connection, splToken);
       const decimals = mintInfo.decimals;
-      
+
       // Convert amount to integer tokens
       const tokens = BigInt(amount.times(10 ** decimals).integerValue().toString());
-      
-      // Create transfer instruction
+
+      // Create transfer instruction with proper reference handling
       const transferInstruction = createTransferCheckedInstruction(
         senderAta,
         splToken,
@@ -275,16 +270,23 @@ async function createTransferWithAta(connection, sender, transferParams) {
         tokens,
         decimals
       );
-      
-      // Create transaction
+
+      // Add reference keys to the transfer instruction BEFORE adding to transaction
+      // This is critical for Solana Pay validation to work correctly
+      if (reference) {
+        const references = Array.isArray(reference) ? reference : [reference];
+        for (const pubkey of references) {
+          transferInstruction.keys.push({ pubkey, isWritable: false, isSigner: false });
+        }
+      }
+
+      // Create transaction with proper instruction order for Solana Pay
       const transaction = new Transaction();
-      
-      // IMPORTANT: For Solana Pay validation to work correctly, the transfer instruction 
-      // must be the LAST instruction, and the ATA creation must come BEFORE it
+
+      // 1. Add ATA creation instruction FIRST
       transaction.add(createAtaInstruction);
-      transaction.add(transferInstruction);
-      
-      // Add memo if provided (this will be second to last)
+
+      // 2. Add memo if provided (SECOND)
       if (memo) {
         const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
         transaction.add(
@@ -295,40 +297,27 @@ async function createTransferWithAta(connection, sender, transferParams) {
           })
         );
       }
-      
-      // IMPORTANT: For Solana Pay validation, references should be handled as separate instructions
-      // not by modifying the transfer instruction keys
-      if (reference) {
-        const references = Array.isArray(reference) ? reference : [reference];
-        // Add references as separate memo instructions (this is how Solana Pay handles references)
-        for (const pubkey of references) {
-          transaction.add(
-            new TransactionInstruction({
-              programId: new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
-              keys: [],
-              data: Buffer.from(pubkey.toBase58(), 'utf8'),
-            })
-          );
-        }
-      }
-      
+
+      // 3. Add transfer instruction LAST (this is what Solana Pay validates)
+      transaction.add(transferInstruction);
+
       // Set fee payer and blockhash
       transaction.feePayer = sender;
       const { blockhash } = await connection.getLatestBlockhash();
       transaction.recentBlockhash = blockhash;
-      
+
       return transaction;
     }
   } catch (error) {
     // Log the full error for debugging
-    console.error('Error in createTransferWithAta:', error);
-    
+    logger.error('Error in createTransferWithAta', { error: error.message });
+
     // If it's a "recipient not found" error, it might be from the Solana Pay library
     // trying to validate the recipient account exists
     if (error.message && error.message.includes('recipient not found')) {
       throw new Error('Recipient wallet not found. This can happen with new wallets that have never received a transaction. Please try sending a small SOL amount to the recipient wallet first.');
     }
-    
+
     throw new Error(`Failed to create transfer with ATA: ${error.message}`);
   }
 }
